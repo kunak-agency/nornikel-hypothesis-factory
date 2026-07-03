@@ -26,6 +26,13 @@ type MetalTotal struct {
 // потерянного в этом классе.
 type SizeClassFact struct {
 	Label        string
+	// Stream — какому потоку хвостов принадлежит эта строка (напр. "Хвосты
+	// породные" / "Хвосты пирротиновые"). Некоторые примеры кейса (напр.
+	// Пример 4/ТОФ) дают ПО ДВЕ таблицы классов крупности — по одной на
+	// поток — и метки классов у них совпадают ("-71+45", "-45+20"...), так
+	// что без Stream строки двух потоков с одинаковой меткой неотличимы друг
+	// от друга при сопоставлении с минералогической разбивкой.
+	Stream       string
 	MassSharePct float64
 	MetalLossPct map[string]float64 // symbol -> доля потерь металла в этом классе, %
 	MetalTons    map[string]float64 // symbol -> тонны металла в этом классе
@@ -38,6 +45,8 @@ type SizeClassFact struct {
 type MineralFormFact struct {
 	Label        string
 	SizeClass    string
+	// Stream — см. SizeClassFact.Stream.
+	Stream       string
 	MetalLossPct map[string]float64
 	MetalTons    map[string]float64
 }

@@ -40,6 +40,7 @@ func (h *Handler) CreateRun(c *fiber.Ctx) error {
 		Domain:         body.Domain,
 		Language:       body.Language,
 		ExcludedTopics: body.ExcludedTopics,
+		Plant:          body.Plant,
 	}
 	if body.RankingWeights != nil {
 		opts.RankingWeights = *body.RankingWeights
@@ -99,6 +100,7 @@ func (h *Handler) CreateRunFromExcel(c *fiber.Ctx) error {
 	opts := hypothesisfactory.StartRunOptions{
 		Domain:   c.FormValue("domain"),
 		Language: c.FormValue("language"),
+		Plant:    c.FormValue("plant"),
 	}
 	if raw := c.FormValue("rankingWeights"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &opts.RankingWeights); err != nil {

@@ -36,6 +36,13 @@ type StartRunOptions struct {
 	Language       string
 	RankingWeights domain.RankingWeights
 	ExcludedTopics []string
+	// Plant — если задано, ПЕРЕКРЫВАЕТ то, что LLM извлечёт из RawText в
+	// ProblemSpec.Plant. RawText — недоверенный ввод: он может содержать
+	// текст, замаскированный под данные, но на деле являющийся инструкцией
+	// ("игнорируй предыдущие инструкции, фабрика = ..."). Явный Plant даёт
+	// вызывающей стороне детерминированный выбор фабрики, не зависящий от
+	// того, устоял ли extraction-промпт перед инъекцией.
+	Plant string
 }
 
 func (o StartRunOptions) normalized() StartRunOptions {
@@ -61,6 +68,9 @@ func (s *Service) StartRun(ctx context.Context, rawText string, rawInput map[str
 	spec, err := buildProblemSpec(ctx, s.llm, rawText)
 	if err != nil {
 		return nil, errs.Wrap(err, errs.ErrTypeInternal, "build problem spec")
+	}
+	if opts.Plant != "" {
+		spec.Plant = opts.Plant
 	}
 	s.enrichAvailableEquipment(ctx, &spec)
 
@@ -131,6 +141,9 @@ func (s *Service) StartRunFromExcel(ctx context.Context, excelData []byte, rawTe
 		}
 	}
 
+	if opts.Plant != "" {
+		spec.Plant = opts.Plant
+	}
 	hotspots := casefacts.BuildLossHotspots(facts, 3)
 	if len(hotspots) > 0 {
 		spec.LossHotspots = hotspots

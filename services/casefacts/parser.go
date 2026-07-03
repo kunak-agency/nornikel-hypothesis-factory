@@ -70,10 +70,23 @@ func ParseTailingsExcel(data []byte) (domain.CaseFacts, error) {
 	}
 
 	facts := domain.CaseFacts{}
+	metalsBySymbol := map[string]domain.MetalTotal{}
 	var currentCols []metalCol
 	var labelCol int
 	tableKind := "" // "" | "totals" | "sizeclass" | "mineralform"
 	var mineralFormSizeClass string
+	// currentStream — некоторые примеры кейса (Пример 4/ТОФ) дают отвальные
+	// хвосты как сумму НЕСКОЛЬКИХ потоков ("Хвосты породные", "Хвосты
+	// пирротиновые"), каждый со своей полной таблицей класс-крупности +
+	// минералогия, и метки классов у разных потоков совпадают ("-71+45" есть
+	// у обоих). Строка-маркер потока — "Хвосты <тип>" с заполненными
+	// колонками металлов (в отличие от "Хвосты породные" без чисел на
+	// строке 14 дампа, которая просто сообщает суммарную массу) —
+	// перечитывается generic-циклом ниже наравне с обычной строкой данных,
+	// поэтому здесь достаточно её распознать по префиксу метки и наличию
+	// значений и запомнить как тег для всех последующих sizeclass/
+	// mineralform строк, вплоть до следующего такого маркера.
+	var currentStream string
 
 	// excludedMineralFormLabels — "Извлекаемый металл"/"Не извлекаемый
 	// металл" — это отдельная сводка (сколько потерянного металла в принципе
@@ -137,14 +150,27 @@ func ParseTailingsExcel(data []byte) (domain.CaseFacts, error) {
 
 		switch {
 		case strings.Contains(strings.ToLower(label), "отвальные хвосты") && !isTotal:
+			// "Отвальные хвосты" встречается дважды (секции "Факт" и
+			// "Расчёт" — два способа получить одну и ту же суммарную
+			// цифру); последнее ("Расчёт", идёт по файлу вторым) считается
+			// точным значением и должно победить, а не накапливаться
+			// вторым отдельным элементом с тем же символом металла —
+			// map с last-write-wins по symbol гарантирует ровно один
+			// MetalTotal на металл вместо дубликатов с расходящимися
+			// цифрами.
 			for sym, t := range metalTons {
-				facts.Metals = append(facts.Metals, domain.MetalTotal{Symbol: sym, Tons: t, GradePct: metalLossPct[sym]})
+				metalsBySymbol[sym] = domain.MetalTotal{Symbol: sym, Tons: t, GradePct: metalLossPct[sym]}
 			}
 			if v, ok := parseFloatLoose(cellAt(row, labelCol+1)); ok {
 				facts.TotalTailingsTons = v
 			}
+		case strings.HasPrefix(strings.ToLower(label), "хвосты ") && len(metalTons) > 0:
+			// Маркер начала таблиц конкретного потока (см. currentStream
+			// выше) — не sizeclass/mineralform строка сама по себе, просто
+			// тег для последующих.
+			currentStream = label
 		case tableKind == "sizeclass" && !isTotal:
-			sc := domain.SizeClassFact{Label: label, MetalLossPct: metalLossPct, MetalTons: metalTons}
+			sc := domain.SizeClassFact{Label: label, Stream: currentStream, MetalLossPct: metalLossPct, MetalTons: metalTons}
 			// "Доля класса, %" — не привязанная к металлу колонка, сразу
 			// после labelCol в этой таблице.
 			if v, ok := parseFloatLoose(cellAt(row, labelCol+1)); ok {
@@ -155,11 +181,16 @@ func ParseTailingsExcel(data []byte) (domain.CaseFacts, error) {
 			facts.MineralForms = append(facts.MineralForms, domain.MineralFormFact{
 				Label:        label,
 				SizeClass:    mineralFormSizeClass,
+				Stream:       currentStream,
 				MetalLossPct: metalLossPct,
 				MetalTons:    metalTons,
 			})
 		}
 	}
+	for _, mt := range metalsBySymbol {
+		facts.Metals = append(facts.Metals, mt)
+	}
+	sort.Slice(facts.Metals, func(i, j int) bool { return facts.Metals[i].Symbol < facts.Metals[j].Symbol })
 
 	if len(facts.SizeClasses) == 0 && len(facts.MineralForms) == 0 && len(facts.Metals) == 0 {
 		return facts, fmt.Errorf("no recognizable case-facts tables found (expected headers like %q)", "Элемент 28, %")
@@ -273,13 +304,22 @@ func BuildLossHotspots(facts domain.CaseFacts, topN int) []string {
 
 	formsBySizeClass := map[string][]domain.MineralFormFact{}
 	for _, mf := range facts.MineralForms {
-		key := normalizeSizeClassLabel(mf.SizeClass)
+		key := sizeClassKey(mf.Stream, mf.SizeClass)
 		formsBySizeClass[key] = append(formsBySizeClass[key], mf)
+	}
+
+	// distinctStreams>1 — только тогда метка класса крупности неоднозначна
+	// и стоит показывать поток в выводе; для однопотоковых примеров (большинство
+	// кейса) это лишний шум, ломающий формат, который ожидает LLM (см. пример
+	// в systemPrompt ниже).
+	distinctStreams := map[string]bool{}
+	for _, sc := range facts.SizeClasses {
+		distinctStreams[sc.Stream] = true
 	}
 
 	var hotspots []string
 	for _, c := range candidates {
-		forms := formsBySizeClass[normalizeSizeClassLabel(c.sc.Label)]
+		forms := formsBySizeClass[sizeClassKey(c.sc.Stream, c.sc.Label)]
 		var dominantForm string
 		var dominantPct float64
 		var bestTons float64
@@ -290,15 +330,27 @@ func BuildLossHotspots(facts domain.CaseFacts, topN int) []string {
 				dominantPct = f.MetalLossPct[c.metal]
 			}
 		}
+		label := c.sc.Label
+		if len(distinctStreams) > 1 && c.sc.Stream != "" {
+			label = fmt.Sprintf("%s (%s)", label, c.sc.Stream)
+		}
 		if dominantForm != "" {
 			hotspots = append(hotspots, fmt.Sprintf("%s мкм: %s, ~%.0f%% потерь %s в этом классе",
-				c.sc.Label, dominantForm, dominantPct, c.metal))
+				label, dominantForm, dominantPct, c.metal))
 		} else {
 			hotspots = append(hotspots, fmt.Sprintf("%s мкм: ~%.0f%% потерь %s (%.0f т) сосредоточено в этом классе",
-				c.sc.Label, c.sc.MetalLossPct[c.metal], c.metal, c.tons))
+				label, c.sc.MetalLossPct[c.metal], c.metal, c.tons))
 		}
 	}
 	return hotspots
+}
+
+// sizeClassKey — ключ сопоставления sizeclass-строки с её минералогической
+// разбивкой: метка класса крупности сама по себе неуникальна между потоками
+// (см. Stream в domain.SizeClassFact/MineralFormFact), поэтому ключ всегда
+// пара (поток, класс), а не только класс.
+func sizeClassKey(stream, label string) string {
+	return normalizeSizeClassLabel(stream) + "|" + normalizeSizeClassLabel(label)
 }
 
 func dominantMetal(tons map[string]float64) (string, float64) {
