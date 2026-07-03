@@ -4,3 +4,5 @@
 __pycache__/
 *.pyc
 .venv/
+/db/*.sql
+/db/*.sql.gz

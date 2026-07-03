@@ -1,0 +1,23 @@
+# Override for one-off knowledge-base ingestion — team-only, never used for
+# the submitted solution. Swaps the lightweight runtime `pyworker` (embed +
+# rerank, CPU) for the heavy ingestion tool (Docling/OCR + embed + rerank,
+# ROCm-accelerated) so the api container's /v1/documents ingest path has
+# somewhere to send large books.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ingestion.yml up -d --build
+#   ./scripts/seed_corpus.sh
+#   docker compose -f docker-compose.yml -f docker-compose.ingestion.yml exec postgres \
+#     pg_dump -U postgres hypothesis_factory > db/hypothesis_factory.dump.sql
+#   docker compose -f docker-compose.yml -f docker-compose.ingestion.yml down
+#   # then submit/demo with plain `docker compose up` (light pyworker, dump restored on init)
+services:
+  pyworker:
+    build: ./tools/ingestion
+    devices:
+      - /dev/kfd
+      - /dev/dri/renderD128
+    group_add:
+      - render
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"

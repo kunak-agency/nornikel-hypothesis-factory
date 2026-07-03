@@ -9,6 +9,7 @@ import (
 
 	"hypothesis-factory/domain"
 	"hypothesis-factory/externalApi"
+	"hypothesis-factory/repositories"
 
 	"github.com/google/uuid"
 )
@@ -50,10 +51,18 @@ evidence, даже без измеренного эффекта.
 
 const claimExtractionConcurrency = 8
 
+// parentContextRadius — сколько соседних чанков (по ordinal, тот же
+// документ) добавляется по обе стороны retrieved ("child") чанка при claim
+// extraction. Docling иногда режет таблицу и поясняющий её текст на два
+// соседних чанка (разные heading блокируют HybridChunker.merge_peers) — окно
+// ordinal±1 склеивает их обратно в parent-контекст, где дословная цитата
+// остаётся проверяемой, даже если она лежит не в самом retrieved чанке.
+const parentContextRadius = 1
+
 // extractClaims извлекает claims по каждому retrieved-чанку конкурентно
 // (ограниченно), не последовательно — N чанков стоит ~1 LLM round-trip по
 // времени, а не N. Требуется, чтобы уложиться в "минуты, не часы".
-func extractClaims(ctx context.Context, client externalApi.LLMClient, chunks []domain.RetrievedChunk) []domain.Claim {
+func extractClaims(ctx context.Context, client externalApi.LLMClient, chunkRepo *repositories.ChunkRepo, chunks []domain.RetrievedChunk) []domain.Claim {
 	results := make([][]domain.Claim, len(chunks))
 	sem := make(chan struct{}, claimExtractionConcurrency)
 	var wg sync.WaitGroup
@@ -64,7 +73,8 @@ func extractClaims(ctx context.Context, client externalApi.LLMClient, chunks []d
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[i] = extractClaimsFromChunk(ctx, client, chunk)
+			parentContent := buildParentContext(ctx, chunkRepo, chunk)
+			results[i] = extractClaimsFromChunk(ctx, client, chunk, parentContent)
 		}(i, chunk)
 	}
 	wg.Wait()
@@ -76,9 +86,28 @@ func extractClaims(ctx context.Context, client externalApi.LLMClient, chunks []d
 	return all
 }
 
-func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, chunk domain.RetrievedChunk) []domain.Claim {
-	userMsg := fmt.Sprintf("Источник: %s (%s)\nРаздел: %s\n\nФрагмент:\n%s",
-		chunk.DocumentTitle, chunk.SourceType, chunk.Section, chunk.Content)
+// buildParentContext стягивает retrieved-чанк с его непосредственными
+// соседями в один блок текста. Падает обратно на chunk.Content, если запрос
+// соседей не удался — child-only extraction хуже, но не хуже, чем было
+// раньше.
+func buildParentContext(ctx context.Context, chunkRepo *repositories.ChunkRepo, chunk domain.RetrievedChunk) string {
+	neighbors, err := chunkRepo.GetNeighbors(ctx, chunk.DocumentID, chunk.Ordinal, parentContextRadius)
+	if err != nil || len(neighbors) == 0 {
+		return chunk.Content
+	}
+	var b strings.Builder
+	for _, n := range neighbors {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(n.Content)
+	}
+	return b.String()
+}
+
+func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, chunk domain.RetrievedChunk, parentContent string) []domain.Claim {
+	userMsg := fmt.Sprintf("Источник: %s (%s)\nРаздел: %s\n\nФрагмент (с окружающим контекстом):\n%s",
+		chunk.DocumentTitle, chunk.SourceType, chunk.Section, parentContent)
 
 	resp, err := client.Complete(ctx, externalApi.CompleteRequest{
 		Messages: []externalApi.Message{
@@ -125,7 +154,7 @@ func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, c
 		// citation faithfulness показывают, что модели цитируют
 		// правдоподобный, но никогда не встречавшийся в источнике текст;
 		// валидный JSON этого не ловит — нужна проверка вне LLM-вызова.
-		if !isGrounded(r.Quote, chunk.Content) {
+		if !isGrounded(r.Quote, parentContent) {
 			continue
 		}
 		claims = append(claims, domain.Claim{

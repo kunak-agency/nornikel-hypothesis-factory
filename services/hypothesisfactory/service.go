@@ -10,6 +10,7 @@ import (
 	"hypothesis-factory/pkg/errs"
 	"hypothesis-factory/pkg/logger"
 	"hypothesis-factory/repositories"
+	"hypothesis-factory/services/casefacts"
 
 	"github.com/google/uuid"
 )
@@ -38,6 +39,60 @@ func (s *Service) StartRun(ctx context.Context, rawText string, rawInput map[str
 	spec, err := buildProblemSpec(ctx, s.llm, rawText)
 	if err != nil {
 		return nil, errs.Wrap(err, errs.ErrTypeInternal, "build problem spec")
+	}
+
+	run := &domain.HypothesisRun{
+		ProblemSpec: spec,
+		RawInput:    rawInput,
+		Status:      domain.RunStatusPending,
+	}
+	if err := s.repos.Runs.Create(ctx, run); err != nil {
+		return nil, errs.Wrap(err, errs.ErrTypeInternal, "create run")
+	}
+	return run, nil
+}
+
+// StartRunFromExcel — то же самое, что StartRun, но loss_hotspots и
+// затронутые металлы берутся детерминированным парсингом профиля хвостов
+// (Хвосты *.xlsx), а не пересказом LLM: сама LLM используется только для
+// качественных полей (target_kpi/оборудование/ограничения) из свободного
+// текста, если он передан. Числа из файла — источник истины, LLM их не
+// видит и не может исказить.
+func (s *Service) StartRunFromExcel(ctx context.Context, excelData []byte, rawText string, rawInput map[string]any) (*domain.HypothesisRun, error) {
+	facts, err := casefacts.ParseTailingsExcel(excelData)
+	if err != nil {
+		return nil, errs.NewValidationError("parse tailings excel: " + err.Error())
+	}
+
+	var spec domain.ProblemSpec
+	if rawText != "" {
+		spec, err = buildProblemSpec(ctx, s.llm, rawText)
+		if err != nil {
+			return nil, errs.Wrap(err, errs.ErrTypeInternal, "build problem spec")
+		}
+	}
+
+	hotspots := casefacts.BuildLossHotspots(facts, 3)
+	if len(hotspots) > 0 {
+		spec.LossHotspots = hotspots
+	}
+	metalSet := map[string]bool{}
+	for _, m := range spec.TargetMetals {
+		metalSet[m] = true
+	}
+	for _, m := range facts.Metals {
+		if !metalSet[m.Symbol] {
+			spec.TargetMetals = append(spec.TargetMetals, m.Symbol)
+			metalSet[m.Symbol] = true
+		}
+	}
+
+	if rawInput == nil {
+		rawInput = map[string]any{}
+	}
+	rawInput["case_facts"] = facts
+	if len(facts.Warnings) > 0 {
+		logger.LogWarningCtx(ctx, "case facts parse warnings: %v", facts.Warnings)
 	}
 
 	run := &domain.HypothesisRun{
@@ -82,7 +137,7 @@ func (s *Service) runPipeline(ctx context.Context, run *domain.HypothesisRun) er
 	if err := s.repos.Runs.UpdateStatus(ctx, run.ID, domain.RunStatusExtracting); err != nil {
 		return fmt.Errorf("update status extracting: %w", err)
 	}
-	claims := extractClaims(ctx, s.llm, chunks)
+	claims := extractClaims(ctx, s.llm, s.repos.Chunks, chunks)
 	resolveEntities(ctx, s.repos.Entities, s.pyworker, claims)
 	for i := range claims {
 		if err := s.repos.Claims.Create(ctx, &claims[i]); err != nil {

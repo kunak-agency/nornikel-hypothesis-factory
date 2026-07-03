@@ -74,6 +74,12 @@ definitions:
       ErrTypeNotFound: "404"
       ErrTypeTimeout: "504"
       ErrTypeValidation: "422"
+    x-enum-descriptions:
+    - "422"
+    - "404"
+    - "409"
+    - "504"
+    - "500"
     x-enum-varnames:
     - ErrTypeValidation
     - ErrTypeNotFound
@@ -533,6 +539,58 @@ paths:
       summary: Граф evidence-связей прогона
       tags:
       - runs
+  /runs/{runId}/report.csv:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: CSV-отчёт по прогону
+      tags:
+      - runs
+  /runs/{runId}/report.docx:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: DOCX-отчёт по прогону
+      tags:
+      - runs
   /runs/{runId}/report.md:
     get:
       parameters:
@@ -553,6 +611,71 @@ paths:
           schema:
             $ref: '#/definitions/errs.Error'
       summary: Markdown-отчёт по прогону
+      tags:
+      - runs
+  /runs/{runId}/report.pdf:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: PDF-отчёт по прогону
+      tags:
+      - runs
+  /runs/from-excel:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Принимает Хвосты *.xlsx — числа (классы крупности, минеральные
+        формы, Ni/Cu) парсятся детерминированно, без LLM. rawText опционален — дополняет
+        качественные поля (цель, оборудование, ограничения).
+      parameters:
+      - description: Хвосты *.xlsx
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Свободный текст с доп. контекстом (цель, оборудование, ограничения)
+        in: formData
+        name: rawText
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/out.RunResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Запуск генерации гипотез из профиля хвостов (Excel)
       tags:
       - runs
 swagger: "2.0"

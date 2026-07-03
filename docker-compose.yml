@@ -17,13 +17,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # Runtime-only sidecar (embed query + rerank top-K) — no Docling/OCR, no GPU
+  # requirement. Ingestion (heavy, one-off) is a separate tool/compose file
+  # (tools/ingestion/, docker-compose.ingestion.yml) never part of this stack —
+  # the submitted solution ships with a pre-built Postgres dump, not a
+  # from-scratch document parser.
   pyworker:
     build: ./services/pyworker
     ports:
       - "8090:8090"
     volumes:
       - hf-cache:/root/.cache/huggingface
-    # First request downloads BGE-M3 / bge-reranker-v2-m3 / Docling models — cached afterwards.
+    # First request downloads BGE-M3 / bge-reranker-v2-m3 — cached afterwards.
 
   api:
     build: .

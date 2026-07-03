@@ -7,10 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# CPU-only torch+torchvision, installed together from the same index so their
-# ABIs match (installing torch alone lets pip later pull a mismatched
-# torchvision from PyPI, which breaks torchvision::nms at import time).
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+# CPU-only: this service only embeds one query + reranks top-K candidates per
+# request — no GPU needed, and it must build/run reliably on any judge's
+# machine without ROCm/CUDA setup. Heavy ingestion runs separately (tools/ingestion).
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .

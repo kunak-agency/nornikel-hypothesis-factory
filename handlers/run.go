@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
+
 	"hypothesis-factory/in"
 	"hypothesis-factory/out"
 	"hypothesis-factory/pkg/errs"
+	"hypothesis-factory/services/export"
 	"hypothesis-factory/services/hypothesisfactory"
 
 	"github.com/gofiber/fiber/v2"
@@ -33,6 +37,53 @@ func (h *Handler) CreateRun(c *fiber.Ctx) error {
 	}
 
 	run, err := h.services.Pipeline.StartRun(c.UserContext(), body.RawText, body.RawInput)
+	if err != nil {
+		return err
+	}
+	h.services.Pipeline.RunPipelineAsync(run)
+
+	return c.Status(fiber.StatusAccepted).JSON(out.RunFromDomain(run, nil))
+}
+
+// CreateRunFromExcel запускает пайплайн из профиля хвостов (Хвосты *.xlsx —
+// формат кейса). В отличие от CreateRun, loss_hotspots и затронутые металлы
+// считаются кодом из файла, а не пересказом LLM: свободный текст (если
+// передан) используется только для качественных полей ProblemSpec.
+// @Summary      Запуск генерации гипотез из профиля хвостов (Excel)
+// @Description  Принимает Хвосты *.xlsx — числа (классы крупности, минеральные формы, Ni/Cu) парсятся детерминированно, без LLM. rawText опционален — дополняет качественные поля (цель, оборудование, ограничения).
+// @Tags         runs
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        file     formData  file    true   "Хвосты *.xlsx"
+// @Param        rawText  formData  string  false  "Свободный текст с доп. контекстом (цель, оборудование, ограничения)"
+// @Success      202  {object}  out.RunResponse
+// @Failure      400  {object}  errs.Error
+// @Failure      422  {object}  errs.Error
+// @Failure      500  {object}  errs.Error
+// @Router       /runs/from-excel [post]
+func (h *Handler) CreateRunFromExcel(c *fiber.Ctx) error {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return errs.NewBadRequestError("missing file: " + err.Error())
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return errs.NewBadRequestError("open file: " + err.Error())
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return errs.NewInternalError("read file: " + err.Error())
+	}
+
+	var rawInput map[string]any
+	if raw := c.FormValue("rawInput"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &rawInput); err != nil {
+			return errs.NewBadRequestError("invalid rawInput json: " + err.Error())
+		}
+	}
+
+	run, err := h.services.Pipeline.StartRunFromExcel(c.UserContext(), data, c.FormValue("rawText"), rawInput)
 	if err != nil {
 		return err
 	}
@@ -120,4 +171,84 @@ func (h *Handler) GetRunReportMarkdown(c *fiber.Ctx) error {
 	md := hypothesisfactory.RenderMarkdownReport(run.ProblemSpec, hyps)
 	c.Set(fiber.HeaderContentType, "text/markdown; charset=utf-8")
 	return c.SendString(md)
+}
+
+// GetRunReportPDF отдаёт отчёт по прогону в PDF.
+// @Summary      PDF-отчёт по прогону
+// @Tags         runs
+// @Produce      application/pdf
+// @Param        runId  path  string  true  "UUID прогона"
+// @Success      200    {file}    file
+// @Failure      404    {object}  errs.Error
+// @Failure      500    {object}  errs.Error
+// @Router       /runs/{runId}/report.pdf [get]
+func (h *Handler) GetRunReportPDF(c *fiber.Ctx) error {
+	run, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	pdfBytes, err := export.ToPDF(run.ProblemSpec, hyps)
+	if err != nil {
+		return errs.NewInternalError("render pdf: " + err.Error())
+	}
+	c.Set(fiber.HeaderContentType, "application/pdf")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="report.pdf"`)
+	return c.Send(pdfBytes)
+}
+
+// GetRunReportDOCX отдаёт отчёт по прогону в DOCX.
+// @Summary      DOCX-отчёт по прогону
+// @Tags         runs
+// @Produce      application/vnd.openxmlformats-officedocument.wordprocessingml.document
+// @Param        runId  path  string  true  "UUID прогона"
+// @Success      200    {file}    file
+// @Failure      404    {object}  errs.Error
+// @Failure      500    {object}  errs.Error
+// @Router       /runs/{runId}/report.docx [get]
+func (h *Handler) GetRunReportDOCX(c *fiber.Ctx) error {
+	run, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	docxBytes, err := export.ToDOCX(run.ProblemSpec, hyps)
+	if err != nil {
+		return errs.NewInternalError("render docx: " + err.Error())
+	}
+	c.Set(fiber.HeaderContentType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="report.docx"`)
+	return c.Send(docxBytes)
+}
+
+// GetRunReportCSV отдаёт гипотезы прогона в CSV (одна строка на гипотезу).
+// @Summary      CSV-отчёт по прогону
+// @Tags         runs
+// @Produce      text/csv
+// @Param        runId  path  string  true  "UUID прогона"
+// @Success      200    {file}    file
+// @Failure      404    {object}  errs.Error
+// @Failure      500    {object}  errs.Error
+// @Router       /runs/{runId}/report.csv [get]
+func (h *Handler) GetRunReportCSV(c *fiber.Ctx) error {
+	if _, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId")); err != nil {
+		return err
+	}
+	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	csvBytes, err := export.ToCSV(hyps)
+	if err != nil {
+		return errs.NewInternalError("render csv: " + err.Error())
+	}
+	c.Set(fiber.HeaderContentType, "text/csv; charset=utf-8")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="report.csv"`)
+	return c.Send(csvBytes)
 }

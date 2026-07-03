@@ -1,35 +1,26 @@
 """
-pyworker: local ingestion + embedding sidecar for the Hypothesis Factory Go service.
+pyworker: runtime embedding/reranking sidecar for the Hypothesis Factory Go
+service — the part of the pipeline that runs on every POST /v1/runs query.
 
-- POST /ingest  : parse PDF/DOCX/XLSX/PPTX/images via Docling, return semantic chunks
-                   (section-aware: headings, paragraphs, tables), not fixed-size windows.
 - POST /embed   : BGE-M3 dense embeddings (multilingual, up to 8192 tokens).
 - POST /rerank  : bge-reranker-v2-m3 cross-encoder scores for a query against candidates.
 
-Runs fully offline once models are cached locally (air-gapped deployment).
+Deliberately does NOT include Docling/ingestion — that's a heavy, one-off
+offline job with its own GPU-accelerated tool (tools/ingestion), never part
+of the submitted solution's runtime footprint. The knowledge base ships as a
+pre-built Postgres dump; this service only serves live queries against it.
 """
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-from typing import Literal
+import asyncio
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI
 from pydantic import BaseModel
 
 app = FastAPI(title="hypothesis-factory-pyworker")
 
-_docling_converter = None
 _bge_model = None
 _reranker_model = None
-
-
-def get_docling_converter():
-    global _docling_converter
-    if _docling_converter is None:
-        from docling.document_converter import DocumentConverter
-        _docling_converter = DocumentConverter()
-    return _docling_converter
 
 
 def get_bge_model():
@@ -43,8 +34,8 @@ def get_bge_model():
         _bge_model = SentenceTransformer("BAAI/bge-m3")
         # sentence-transformers defaults BGE-M3 to a 512-token max_seq_length
         # (from its saved ST config), silently truncating well below the
-        # model's actual trained 8192-token context — a real loss for long
-        # regulation/textbook chunks. Use the full context it supports.
+        # model's actual trained 8192-token context — must match the
+        # ingestion tool's setting or query/document vectors diverge.
         _bge_model.max_seq_length = 8192
     return _bge_model
 
@@ -57,92 +48,6 @@ def get_reranker_model():
     return _reranker_model
 
 
-class Chunk(BaseModel):
-    ordinal: int
-    section: str | None = None
-    content: str
-    content_type: Literal["text", "table", "figure_caption"] = "text"
-    metadata: dict = {}
-
-
-class IngestResponse(BaseModel):
-    chunks: list[Chunk]
-
-
-def fix_degenerate_single_column_table(text: str) -> str:
-    """Docling's TableFormer treats a single-column Word table (a plain
-    bulleted list rendered as a bordered table, e.g. brainstormed hypothesis
-    lists) as having row 0 as a header, then HybridChunker's table serializer
-    repeats "header = row" for every subsequent row: "2. X = 3. Y. 2. X = 4. Z."
-    That's unusable for claim extraction. Detect the repeating-prefix pattern
-    and reconstruct the original list instead.
-    """
-    if text.count(" = ") < 2:
-        return text
-    parts = text.split(" = ")
-    header = parts[0].strip()
-    if not header:
-        return text
-    items: list[str] = []
-    for p in parts[1:]:
-        p = p.strip()
-        if p.endswith(header):
-            item = p[: -len(header)].rstrip(" .")
-        elif header and header in p:
-            item = p.split(header)[0].rstrip(" .")
-        else:
-            item = p.rstrip(" .")
-        if item:
-            items.append(item)
-    # Only trust the reconstruction if it actually recovered multiple distinct
-    # items — otherwise this wasn't the degenerate pattern, leave text as-is.
-    if len(items) < 2 or len(set(items)) < len(items) - 1:
-        return text
-    return header + "\n" + "\n".join(items)
-
-
-@app.post("/ingest", response_model=IngestResponse)
-async def ingest(file: UploadFile = File(...)):
-    from docling.chunking import HybridChunker
-
-    suffix = Path(file.filename or "upload").suffix or ".bin"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
-
-    converter = get_docling_converter()
-    result = converter.convert(tmp_path)
-    doc = result.document
-
-    chunker = HybridChunker()
-    chunks: list[Chunk] = []
-    for i, chunk in enumerate(chunker.chunk(doc)):
-        text = chunker.serialize(chunk)
-        if not text or not text.strip():
-            continue
-        heading = None
-        meta = getattr(chunk, "meta", None)
-        if meta is not None and getattr(meta, "headings", None):
-            heading = " / ".join(meta.headings)
-        content_type = "text"
-        if meta is not None and getattr(meta, "doc_items", None):
-            labels = {getattr(it, "label", "") for it in meta.doc_items}
-            if any("table" in str(l).lower() for l in labels):
-                content_type = "table"
-                text = fix_degenerate_single_column_table(text)
-        chunks.append(
-            Chunk(
-                ordinal=i,
-                section=heading,
-                content=text.strip(),
-                content_type=content_type,
-                metadata={"source_file": file.filename},
-            )
-        )
-
-    return IngestResponse(chunks=chunks)
-
-
 class EmbedRequest(BaseModel):
     texts: list[str]
 
@@ -151,11 +56,19 @@ class EmbedResponse(BaseModel):
     embeddings: list[list[float]]
 
 
+def _embed_sync(texts: list[str]) -> list[list[float]]:
+    model = get_bge_model()
+    vecs = model.encode(texts, batch_size=12, show_progress_bar=False, normalize_embeddings=True)
+    return [v.tolist() for v in vecs]
+
+
 @app.post("/embed", response_model=EmbedResponse)
 async def embed(req: EmbedRequest):
-    model = get_bge_model()
-    vecs = model.encode(req.texts, batch_size=12, show_progress_bar=False, normalize_embeddings=True)
-    return EmbedResponse(embeddings=[v.tolist() for v in vecs])
+    # asyncio.to_thread keeps the event loop free (e.g. /healthz responsive)
+    # while the model runs — a single query embedding is fast, but this
+    # avoids reintroducing the blocking-event-loop bug under concurrent load.
+    embeddings = await asyncio.to_thread(_embed_sync, req.texts)
+    return EmbedResponse(embeddings=embeddings)
 
 
 class RerankRequest(BaseModel):
@@ -167,12 +80,17 @@ class RerankResponse(BaseModel):
     scores: list[float]
 
 
+def _rerank_sync(query: str, candidates: list[str]) -> list[float]:
+    model = get_reranker_model()
+    pairs = [[query, c] for c in candidates]
+    scores = model.predict(pairs, show_progress_bar=False)
+    return [float(s) for s in scores]
+
+
 @app.post("/rerank", response_model=RerankResponse)
 async def rerank(req: RerankRequest):
-    model = get_reranker_model()
-    pairs = [[req.query, c] for c in req.candidates]
-    scores = model.predict(pairs, show_progress_bar=False)
-    return RerankResponse(scores=[float(s) for s in scores])
+    scores = await asyncio.to_thread(_rerank_sync, req.query, req.candidates)
+    return RerankResponse(scores=scores)
 
 
 @app.get("/healthz")

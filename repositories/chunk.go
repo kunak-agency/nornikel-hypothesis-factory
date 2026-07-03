@@ -18,6 +18,21 @@ func (r *ChunkRepo) Create(ctx context.Context, c *domain.Chunk) error {
 	return r.db.WithContext(ctx).Create(c).Error
 }
 
+// GetNeighbors возвращает чанки того же документа в окне [ordinal-radius,
+// ordinal+radius], упорядоченные по ordinal. Docling эмитит table-чанк и
+// поясняющий его текст как соседние ordinal внутри одного документа (даже
+// когда HybridChunker.merge_peers не смог их слить из-за разных heading) —
+// это даёт claim extraction более широкий ("parent") контекст, чем один
+// retrieved ("child") чанк, без отдельного parent-хранилища.
+func (r *ChunkRepo) GetNeighbors(ctx context.Context, documentID uuid.UUID, ordinal, radius int) ([]domain.Chunk, error) {
+	var chunks []domain.Chunk
+	err := r.db.WithContext(ctx).
+		Where("document_id = ? AND ordinal BETWEEN ? AND ?", documentID, ordinal-radius, ordinal+radius).
+		Order("ordinal ASC").
+		Find(&chunks).Error
+	return chunks, err
+}
+
 // hybridSearchRow — Metadata сознательно не выбирается: downstream (claim
 // extraction) читает только ID/Content/Section/DocumentTitle/SourceType/скоринг.
 type hybridSearchRow struct {

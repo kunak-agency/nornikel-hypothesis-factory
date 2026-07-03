@@ -297,6 +297,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/runs/from-excel": {
+            "post": {
+                "description": "Принимает Хвосты *.xlsx — числа (классы крупности, минеральные формы, Ni/Cu) парсятся детерминированно, без LLM. rawText опционален — дополняет качественные поля (цель, оборудование, ограничения).",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Запуск генерации гипотез из профиля хвостов (Excel)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Хвосты *.xlsx",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Свободный текст с доп. контекстом (цель, оборудование, ограничения)",
+                        "name": "rawText",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/out.RunResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/runs/{runId}": {
             "get": {
                 "produces": [
@@ -366,6 +422,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/runs/{runId}/report.csv": {
+            "get": {
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "CSV-отчёт по прогону",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/runs/{runId}/report.docx": {
+            "get": {
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "DOCX-отчёт по прогону",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/runs/{runId}/report.md": {
             "get": {
                 "produces": [
@@ -393,6 +529,46 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/runs/{runId}/report.pdf": {
+            "get": {
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "PDF-отчёт по прогону",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/errs.Error"
                         }
@@ -510,6 +686,13 @@ const docTemplate = `{
                 "ErrTypeTimeout": "504",
                 "ErrTypeValidation": "422"
             },
+            "x-enum-descriptions": [
+                "422",
+                "404",
+                "409",
+                "504",
+                "500"
+            ],
             "x-enum-varnames": [
                 "ErrTypeValidation",
                 "ErrTypeNotFound",

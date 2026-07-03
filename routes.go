@@ -22,9 +22,13 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 
 	runs := v1.Group("/runs")
 	runs.Post("", hm.CreateRun)
+	runs.Post("/from-excel", hm.CreateRunFromExcel)
 	runs.Get("", handlers.Pagination(), hm.ListRuns)
 	runs.Get("/:runId", hm.GetRun)
 	runs.Get("/:runId/report.md", hm.GetRunReportMarkdown)
+	runs.Get("/:runId/report.pdf", hm.GetRunReportPDF)
+	runs.Get("/:runId/report.docx", hm.GetRunReportDOCX)
+	runs.Get("/:runId/report.csv", hm.GetRunReportCSV)
 	runs.Get("/:runId/graph", hm.GetRunGraph)
 
 	hypotheses := v1.Group("/hypotheses")
