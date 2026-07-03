@@ -153,6 +153,45 @@ definitions:
       verdict:
         type: string
     type: object
+  out.GraphEdgeResponse:
+    properties:
+      from:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      to:
+        type: string
+      type:
+        description: subject | affects | evidence
+        example: evidence
+        type: string
+    type: object
+  out.GraphNodeResponse:
+    properties:
+      id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      type:
+        description: entity | claim | hypothesis
+        example: entity
+        type: string
+    type: object
+  out.GraphResponse:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/out.GraphEdgeResponse'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/out.GraphNodeResponse'
+        type: array
+    type: object
   out.HypothesisResponse:
     properties:
       createdAt:
@@ -468,6 +507,30 @@ paths:
           schema:
             $ref: '#/definitions/errs.Error'
       summary: Статус и результат прогона
+      tags:
+      - runs
+  /runs/{runId}/graph:
+    get:
+      description: 'Узлы: entity (оборудование/показатель/реагент/...), claim, hypothesis.
+        Рёбра: subject (entity→claim), affects (claim→entity), evidence (claim→hypothesis).'
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.GraphResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Граф evidence-связей прогона
       tags:
       - runs
   /runs/{runId}/report.md:

@@ -17,6 +17,7 @@ type Repos struct {
 	Documents   *DocumentRepo
 	Chunks      *ChunkRepo
 	Claims      *ClaimRepo
+	Entities    *EntityRepo
 	Runs        *HypothesisRunRepo
 	Hypotheses  *HypothesisRepo
 	Feedback    *FeedbackRepo
@@ -46,6 +47,7 @@ func InitRepos() (*Repos, error) {
 		Documents:  NewDocumentRepo(db),
 		Chunks:     NewChunkRepo(db),
 		Claims:     NewClaimRepo(db),
+		Entities:   NewEntityRepo(db),
 		Runs:       NewHypothesisRunRepo(db),
 		Hypotheses: NewHypothesisRepo(db),
 		Feedback:   NewFeedbackRepo(db),
@@ -64,6 +66,7 @@ func (r *Repos) MigrateDB() error {
 	if err := r.db.AutoMigrate(
 		&domain.Document{},
 		&domain.Chunk{},
+		&domain.Entity{},
 		&domain.Claim{},
 		&domain.HypothesisRun{},
 		&domain.Hypothesis{},
@@ -93,6 +96,15 @@ func (r *Repos) MigrateDB() error {
 		return fmt.Errorf("create hnsw index: %w", err)
 	}
 
+	// HNSW по эмбеддингу сущностей — используется entity resolution (find
+	// nearest existing entity перед созданием новой) при claim extraction.
+	if err := r.db.Exec(`
+		CREATE INDEX IF NOT EXISTS entities_embedding_hnsw_idx ON entities
+		USING hnsw (embedding vector_cosine_ops)
+	`).Error; err != nil {
+		return fmt.Errorf("create entities hnsw index: %w", err)
+	}
+
 	// ON DELETE CASCADE между сущностями — AutoMigrate без явной GORM-связи
 	// (belongs-to/has-many поля) FK вообще не создаёт, а хотим именно
 	// каскадное удаление (удалили документ — ушли его chunks/claims).
@@ -101,6 +113,10 @@ func (r *Repos) MigrateDB() error {
 			FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE`},
 		{"fk_claims_chunk", "claims", `ALTER TABLE claims ADD CONSTRAINT fk_claims_chunk
 			FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE`},
+		{"fk_claims_subject_entity", "claims", `ALTER TABLE claims ADD CONSTRAINT fk_claims_subject_entity
+			FOREIGN KEY (subject_entity_id) REFERENCES entities(id) ON DELETE SET NULL`},
+		{"fk_claims_metric_entity", "claims", `ALTER TABLE claims ADD CONSTRAINT fk_claims_metric_entity
+			FOREIGN KEY (metric_entity_id) REFERENCES entities(id) ON DELETE SET NULL`},
 		{"fk_hypotheses_run", "hypotheses", `ALTER TABLE hypotheses ADD CONSTRAINT fk_hypotheses_run
 			FOREIGN KEY (run_id) REFERENCES hypothesis_runs(id) ON DELETE CASCADE`},
 		{"fk_feedback_hypothesis", "feedbacks", `ALTER TABLE feedbacks ADD CONSTRAINT fk_feedback_hypothesis

@@ -331,6 +331,41 @@ const docTemplate = `{
                 }
             }
         },
+        "/runs/{runId}/graph": {
+            "get": {
+                "description": "Узлы: entity (оборудование/показатель/реагент/...), claim, hypothesis. Рёбра: subject (entity→claim), affects (claim→entity), evidence (claim→hypothesis).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Граф evidence-связей прогона",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.GraphResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/runs/{runId}/report.md": {
             "get": {
                 "produces": [
@@ -587,6 +622,64 @@ const docTemplate = `{
                 },
                 "verdict": {
                     "type": "string"
+                }
+            }
+        },
+        "out.GraphEdgeResponse": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "subject | affects | evidence",
+                    "type": "string",
+                    "example": "evidence"
+                }
+            }
+        },
+        "out.GraphNodeResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "entity | claim | hypothesis",
+                    "type": "string",
+                    "example": "entity"
+                }
+            }
+        },
+        "out.GraphResponse": {
+            "type": "object",
+            "properties": {
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.GraphEdgeResponse"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.GraphNodeResponse"
+                    }
                 }
             }
         },

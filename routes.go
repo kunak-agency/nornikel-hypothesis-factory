@@ -25,6 +25,7 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 	runs.Get("", handlers.Pagination(), hm.ListRuns)
 	runs.Get("/:runId", hm.GetRun)
 	runs.Get("/:runId/report.md", hm.GetRunReportMarkdown)
+	runs.Get("/:runId/graph", hm.GetRunGraph)
 
 	hypotheses := v1.Group("/hypotheses")
 	hypotheses.Post("/:hypothesisId/feedback", hm.SubmitFeedback)

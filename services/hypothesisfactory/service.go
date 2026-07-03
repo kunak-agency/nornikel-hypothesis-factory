@@ -83,6 +83,7 @@ func (s *Service) runPipeline(ctx context.Context, run *domain.HypothesisRun) er
 		return fmt.Errorf("update status extracting: %w", err)
 	}
 	claims := extractClaims(ctx, s.llm, chunks)
+	resolveEntities(ctx, s.repos.Entities, s.pyworker, claims)
 	for i := range claims {
 		if err := s.repos.Claims.Create(ctx, &claims[i]); err != nil {
 			return fmt.Errorf("persist claim: %w", err)

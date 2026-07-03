@@ -1,0 +1,54 @@
+package repositories
+
+import (
+	"context"
+
+	"hypothesis-factory/domain"
+
+	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
+	"gorm.io/gorm"
+)
+
+type EntityRepo struct{ db *gorm.DB }
+
+func NewEntityRepo(db *gorm.DB) *EntityRepo { return &EntityRepo{db: db} }
+
+func (r *EntityRepo) Create(ctx context.Context, e *domain.Entity) error {
+	return r.db.WithContext(ctx).Create(e).Error
+}
+
+// FindNearest возвращает ближайшую по cosine distance сущность заданного
+// kind и её distance (0 = идентичны, 2 = противоположны). Вызывающий сам
+// решает порог "это та же сущность" — см. resolveEntity в
+// services/hypothesisfactory. kind сужает поиск: "диаметр насадки" (metric) и
+// "гидроциклон" (equipment) не должны схлопнуться даже при похожем эмбеддинге.
+func (r *EntityRepo) FindNearest(ctx context.Context, embedding []float32, kind string) (*domain.Entity, float64, error) {
+	var row struct {
+		domain.Entity
+		Distance float64
+	}
+	err := r.db.WithContext(ctx).
+		Table("entities").
+		Select("*, embedding <=> ? AS distance", pgvector.NewVector(embedding)).
+		Where("kind = ? AND embedding IS NOT NULL", kind).
+		Order("distance ASC").
+		Limit(1).
+		Scan(&row).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	if row.ID == uuid.Nil {
+		return nil, 0, nil
+	}
+	return &row.Entity, row.Distance, nil
+}
+
+func (r *EntityRepo) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Entity, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var out []domain.Entity
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&out).Error
+	return out, err
+}

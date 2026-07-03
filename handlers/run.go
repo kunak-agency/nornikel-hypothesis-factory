@@ -82,6 +82,24 @@ func (h *Handler) ListRuns(c *fiber.Ctx) error {
 	return c.JSON(resp)
 }
 
+// GetRunGraph отдаёт evidence-граф (источник → claim → гипотеза) для гипотез
+// прогона — визуализация связей, которую явно требует кейс.
+// @Summary      Граф evidence-связей прогона
+// @Description  Узлы: entity (оборудование/показатель/реагент/...), claim, hypothesis. Рёбра: subject (entity→claim), affects (claim→entity), evidence (claim→hypothesis).
+// @Tags         runs
+// @Produce      json
+// @Param        runId  path      string  true  "UUID прогона"
+// @Success      200    {object}  out.GraphResponse
+// @Failure      404    {object}  errs.Error
+// @Router       /runs/{runId}/graph [get]
+func (h *Handler) GetRunGraph(c *fiber.Ctx) error {
+	g, err := h.services.Pipeline.BuildRunGraph(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(out.GraphFromDomain(g))
+}
+
 // GetRunReportMarkdown отдаёт человекочитаемый Markdown-отчёт по прогону.
 // @Summary      Markdown-отчёт по прогону
 // @Tags         runs
