@@ -12,10 +12,10 @@ CASE_DIR="${CASE_DIR:-/home/god/Документы/nornikel/Задача 1}"
 post_doc() {
   local file="$1" title="$2" source_type="$3" domain="${4:-flotation}"
   echo "Ingesting [$source_type] $title ..."
-  curl -sS -X POST "$API/documents" \
+  curl -sS -X POST "$API/v1/documents" \
     -F "file=@${file}" \
     -F "title=${title}" \
-    -F "source_type=${source_type}" \
+    -F "sourceType=${source_type}" \
     -F "domain=${domain}" \
     -F "language=ru" | python3 -m json.tool
 }

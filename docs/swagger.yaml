@@ -1,0 +1,495 @@
+basePath: /v1
+definitions:
+  domain.KPIEffect:
+    properties:
+      direction:
+        description: increase | decrease
+        type: string
+      magnitude:
+        type: string
+      metric:
+        type: string
+    type: object
+  domain.Scores:
+    properties:
+      confidence:
+        type: number
+      evidenceStrength:
+        type: number
+      feasibility:
+        type: number
+      impact:
+        type: number
+      novelty:
+        type: number
+      riskPenalty:
+        type: number
+      total:
+        type: number
+    type: object
+  domain.VerificationStep:
+    properties:
+      resource:
+        type: string
+      step:
+        type: string
+      successCriterion:
+        type: string
+    type: object
+  errs.Error:
+    properties:
+      caller:
+        type: string
+      details:
+        items:
+          $ref: '#/definitions/errs.FieldError'
+        type: array
+      message:
+        type: string
+      reason:
+        type: string
+      type:
+        $ref: '#/definitions/errs.Type'
+    type: object
+  errs.FieldError:
+    properties:
+      field:
+        type: string
+      message:
+        type: string
+      rule:
+        type: string
+    type: object
+  errs.Type:
+    enum:
+    - VALIDATION
+    - NOT_FOUND
+    - CONFLICT
+    - TIMEOUT
+    - INTERNAL
+    type: string
+    x-enum-comments:
+      ErrTypeConflict: "409"
+      ErrTypeInternal: "500"
+      ErrTypeNotFound: "404"
+      ErrTypeTimeout: "504"
+      ErrTypeValidation: "422"
+    x-enum-varnames:
+    - ErrTypeValidation
+    - ErrTypeNotFound
+    - ErrTypeConflict
+    - ErrTypeTimeout
+    - ErrTypeInternal
+  in.CreateRunRequest:
+    properties:
+      rawInput:
+        additionalProperties: {}
+        type: object
+      rawText:
+        example: 'Фабрика: КГМК. Породные хвосты 5824591 СМТ...'
+        type: string
+    required:
+    - rawText
+    type: object
+  in.SubmitFeedbackRequest:
+    properties:
+      comment:
+        maxLength: 2000
+        type: string
+      reviewer:
+        maxLength: 200
+        type: string
+      verdict:
+        enum:
+        - confirmed
+        - rejected
+        - needs_revision
+        example: confirmed
+        type: string
+    required:
+    - verdict
+    type: object
+  out.DocumentListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.DocumentResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  out.DocumentResponse:
+    properties:
+      chunkCount:
+        type: integer
+      createdAt:
+        type: string
+      domain:
+        example: flotation
+        type: string
+      id:
+        type: string
+      language:
+        example: ru
+        type: string
+      sourceType:
+        example: book
+        type: string
+      title:
+        type: string
+    type: object
+  out.FeedbackResponse:
+    properties:
+      comment:
+        type: string
+      createdAt:
+        type: string
+      hypothesisId:
+        type: string
+      id:
+        type: string
+      reviewer:
+        type: string
+      verdict:
+        type: string
+    type: object
+  out.HypothesisResponse:
+    properties:
+      createdAt:
+        type: string
+      criticNotes:
+        type: string
+      evidenceRefs:
+        items:
+          type: string
+        type: array
+      expectedKpiEffect:
+        $ref: '#/definitions/domain.KPIEffect'
+      id:
+        type: string
+      mechanism:
+        type: string
+      noveltyReason:
+        type: string
+      rank:
+        type: integer
+      risks:
+        items:
+          type: string
+        type: array
+      runId:
+        type: string
+      scores:
+        $ref: '#/definitions/domain.Scores'
+      statement:
+        type: string
+      verificationPlan:
+        items:
+          $ref: '#/definitions/domain.VerificationStep'
+        type: array
+    type: object
+  out.IngestResponse:
+    properties:
+      chunksIngested:
+        type: integer
+    type: object
+  out.ProblemSpecResponse:
+    properties:
+      availableEquipment:
+        items:
+          type: string
+        type: array
+      constraints:
+        items:
+          type: string
+        type: array
+      horizon:
+        type: string
+      lossHotspots:
+        items:
+          type: string
+        type: array
+      plant:
+        type: string
+      targetKpi:
+        type: string
+      targetMetals:
+        items:
+          type: string
+        type: array
+    type: object
+  out.RunListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.RunResponse'
+        type: array
+      page:
+        type: integer
+      perPage:
+        type: integer
+      total:
+        type: integer
+    type: object
+  out.RunResponse:
+    properties:
+      completedAt:
+        type: string
+      createdAt:
+        type: string
+      error:
+        type: string
+      hypotheses:
+        items:
+          $ref: '#/definitions/out.HypothesisResponse'
+        type: array
+      id:
+        type: string
+      problemSpec:
+        $ref: '#/definitions/out.ProblemSpecResponse'
+      status:
+        example: retrieving
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: 'Evidence-Backed Hypothesis Factory: генерация проверяемых технологических
+    гипотез по обогащению руд на основе базы знаний (RAG).'
+  title: Фабрика гипотез — Hypothesis Factory API
+  version: "1.0"
+paths:
+  /documents:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.DocumentListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Список документов базы знаний
+      tags:
+      - documents
+    post:
+      consumes:
+      - multipart/form-data
+      description: Парсит PDF/DOCX/XLSX/изображение через Docling, эмбеддит чанки
+        BGE-M3, пишет в pgvector.
+      parameters:
+      - description: Файл документа
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Заголовок (по умолчанию — имя файла)
+        in: formData
+        name: title
+        type: string
+      - default: report
+        description: book | regulation | scheme | historical_case | report
+        in: formData
+        name: sourceType
+        type: string
+      - default: flotation
+        description: Домен знаний
+        in: formData
+        name: domain
+        type: string
+      - default: ru
+        description: Язык
+        in: formData
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Загрузка документа в базу знаний
+      tags:
+      - documents
+  /documents/{documentId}:
+    delete:
+      parameters:
+      - description: UUID документа
+        in: path
+        name: documentId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Документ удалён
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Удаление документа из базы знаний
+      tags:
+      - documents
+  /health:
+    get:
+      description: Возвращает {"status":"ok"}, если приложение поднято и обслуживает
+        запросы.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Проверка живости сервиса
+      tags:
+      - health
+  /hypotheses/{hypothesisId}/feedback:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID гипотезы
+        in: path
+        name: hypothesisId
+        required: true
+        type: string
+      - description: Вердикт
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/in.SubmitFeedbackRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/out.FeedbackResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Оценка гипотезы экспертом
+      tags:
+      - hypotheses
+  /runs:
+    get:
+      parameters:
+      - default: 1
+        description: Номер страницы (>=1)
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Размер страницы (1-100)
+        in: query
+        name: perPage
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.RunListResponse'
+      summary: Список прогонов
+      tags:
+      - runs
+    post:
+      consumes:
+      - application/json
+      description: Принимает свободный текст (профиль хвостов/проблему), возвращает
+        run сразу в статусе retrieving — дальше поллить GET /runs/{runId}.
+      parameters:
+      - description: Запрос на генерацию
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/in.CreateRunRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/out.RunResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Запуск генерации гипотез
+      tags:
+      - runs
+  /runs/{runId}:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.RunResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Статус и результат прогона
+      tags:
+      - runs
+  /runs/{runId}/report.md:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - text/markdown
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Markdown-отчёт по прогону
+      tags:
+      - runs
+swagger: "2.0"

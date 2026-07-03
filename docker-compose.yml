@@ -9,7 +9,8 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d
+    # Схема создаётся не отсюда, а Repos.MigrateDB() при старте api
+    # (AutoMigrate по доменным моделям + raw SQL для pgvector/tsvector/HNSW).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
