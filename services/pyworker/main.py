@@ -57,9 +57,22 @@ class EmbedResponse(BaseModel):
 
 
 def _embed_sync(texts: list[str]) -> list[list[float]]:
-    model = get_bge_model()
-    vecs = model.encode(texts, batch_size=12, show_progress_bar=False, normalize_embeddings=True)
-    return [v.tolist() for v in vecs]
+    # Retry with a shrinking batch size on GPU OOM instead of failing the
+    # request outright — see tools/ingestion/main.py for the same fix and
+    # why (long chunks at the model's 8192-token max_seq_length can attempt
+    # a multi-GiB single allocation).
+    import torch
+
+    for batch_size in (12, 4, 1):
+        try:
+            model = get_bge_model()
+            vecs = model.encode(texts, batch_size=batch_size, show_progress_bar=False, normalize_embeddings=True)
+            return [v.tolist() for v in vecs]
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if batch_size == 1:
+                raise
+    raise AssertionError("unreachable")
 
 
 @app.post("/embed", response_model=EmbedResponse)

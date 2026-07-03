@@ -411,9 +411,25 @@ class EmbedResponse(BaseModel):
 
 
 def _embed_sync(texts: list[str]) -> list[list[float]]:
-    model = get_bge_model()
-    vecs = model.encode(texts, batch_size=12, show_progress_bar=False, normalize_embeddings=True)
-    return [v.tolist() for v in vecs]
+    # batch_size=12 at the model's full 8192-token max_seq_length repeatedly
+    # OOM'd on large books (11.98 GiB GPU shared with Docling/RapidOCR, which
+    # alone hold ~8.3 GiB resident): a batch of long chunks can attempt a
+    # single ~5 GiB allocation. Retry with a shrinking batch size on OOM
+    # instead of failing the whole document — worst case (batch_size=1) is
+    # slower but always fits, and empty_cache() between attempts releases
+    # whatever fragmented memory the previous attempt's partial allocation left.
+    import torch
+
+    for batch_size in (12, 4, 1):
+        try:
+            model = get_bge_model()
+            vecs = model.encode(texts, batch_size=batch_size, show_progress_bar=False, normalize_embeddings=True)
+            return [v.tolist() for v in vecs]
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if batch_size == 1:
+                raise
+    raise AssertionError("unreachable")
 
 
 @app.post("/embed", response_model=EmbedResponse)
