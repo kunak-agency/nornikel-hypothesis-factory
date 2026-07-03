@@ -72,6 +72,12 @@ def _embed_sync(texts: list[str]) -> list[list[float]]:
             torch.cuda.empty_cache()
             if batch_size == 1:
                 raise
+        finally:
+            # A caching allocator doesn't return freed blocks to the OS/driver
+            # by default; across many queries with different batch/sequence
+            # shapes those blocks can fragment until an allocation that would
+            # easily fit fails anyway. Cheap relative to a whole embed call.
+            torch.cuda.empty_cache()
     raise AssertionError("unreachable")
 
 
@@ -94,10 +100,21 @@ class RerankResponse(BaseModel):
 
 
 def _rerank_sync(query: str, candidates: list[str]) -> list[float]:
-    model = get_reranker_model()
+    import torch
+
     pairs = [[query, c] for c in candidates]
-    scores = model.predict(pairs, show_progress_bar=False)
-    return [float(s) for s in scores]
+    for batch_size in (32, 8, 1):
+        try:
+            model = get_reranker_model()
+            scores = model.predict(pairs, show_progress_bar=False, batch_size=batch_size)
+            return [float(s) for s in scores]
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if batch_size == 1:
+                raise
+        finally:
+            torch.cuda.empty_cache()
+    raise AssertionError("unreachable")
 
 
 @app.post("/rerank", response_model=RerankResponse)

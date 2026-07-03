@@ -152,6 +152,28 @@ def _table_markdown(doc, chunk) -> str | None:
     return "\n\n".join(parts) if parts else None
 
 
+def _release_gpu_memory() -> None:
+    """Docling's per-document conversion (layout/table/OCR models running
+    over every page) and BGE-M3/reranker batches leave PyTorch's caching
+    allocator holding variable-sized blocks that often can't be reused for
+    the next call's different tensor shapes — across a long-running
+    container ingesting many large books back to back (thousands of pages
+    in a single session), this fragmentation accumulates until a request
+    that would easily fit in the 12GB card OOMs anyway ("9.81 GiB allocated
+    ... tried to allocate 1.12 GiB"). gc.collect() first so any Python-side
+    references to page images/tensors from the just-finished call are
+    actually dropped before empty_cache() hands the freed blocks back to
+    the allocator's free pool.
+    """
+    import gc
+
+    import torch
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _ingest_sync(tmp_path: str, filename: str) -> list[Chunk]:
     from docling.chunking import HybridChunker
 
@@ -161,6 +183,15 @@ def _ingest_sync(tmp_path: str, filename: str) -> list[Chunk]:
 
     chunker = HybridChunker()
     chunks: list[Chunk] = []
+    try:
+        _ingest_sync_body(doc, chunker, chunks, filename)
+    finally:
+        del result, doc
+        _release_gpu_memory()
+    return chunks
+
+
+def _ingest_sync_body(doc, chunker, chunks: list[Chunk], filename: str) -> None:
     for i, chunk in enumerate(chunker.chunk(doc)):
         heading = None
         meta = getattr(chunk, "meta", None)
@@ -195,7 +226,6 @@ def _ingest_sync(tmp_path: str, filename: str) -> list[Chunk]:
                 metadata={"source_file": filename},
             )
         )
-    return chunks
 
 
 GROBID_URL = os.environ.get("GROBID_URL", "http://grobid:8070")
@@ -429,6 +459,12 @@ def _embed_sync(texts: list[str]) -> list[list[float]]:
             torch.cuda.empty_cache()
             if batch_size == 1:
                 raise
+        finally:
+            # Same accumulating-fragmentation reasoning as _release_gpu_memory
+            # (see there) — embed runs on every /runs query, not just
+            # ingestion, so this keeps the allocator tidy for the long-running
+            # runtime container too, not just the one-off ingestion tool.
+            torch.cuda.empty_cache()
     raise AssertionError("unreachable")
 
 
@@ -448,10 +484,21 @@ class RerankResponse(BaseModel):
 
 
 def _rerank_sync(query: str, candidates: list[str]) -> list[float]:
-    model = get_reranker_model()
+    import torch
+
     pairs = [[query, c] for c in candidates]
-    scores = model.predict(pairs, show_progress_bar=False)
-    return [float(s) for s in scores]
+    for batch_size in (32, 8, 1):
+        try:
+            model = get_reranker_model()
+            scores = model.predict(pairs, show_progress_bar=False, batch_size=batch_size)
+            return [float(s) for s in scores]
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if batch_size == 1:
+                raise
+        finally:
+            torch.cuda.empty_cache()
+    raise AssertionError("unreachable")
 
 
 @app.post("/rerank", response_model=RerankResponse)
