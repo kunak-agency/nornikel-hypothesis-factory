@@ -13,14 +13,15 @@ import (
 )
 
 type Repos struct {
-	db          *gorm.DB
-	Documents   *DocumentRepo
-	Chunks      *ChunkRepo
-	Claims      *ClaimRepo
-	Entities    *EntityRepo
-	Runs        *HypothesisRunRepo
-	Hypotheses  *HypothesisRepo
-	Feedback    *FeedbackRepo
+	db             *gorm.DB
+	Documents      *DocumentRepo
+	Chunks         *ChunkRepo
+	Claims         *ClaimRepo
+	Entities       *EntityRepo
+	Runs           *HypothesisRunRepo
+	Hypotheses     *HypothesisRepo
+	Feedback       *FeedbackRepo
+	PlantEquipment *PlantEquipmentRepo
 }
 
 func InitRepos() (*Repos, error) {
@@ -43,14 +44,15 @@ func InitRepos() (*Repos, error) {
 	sqlDB.SetConnMaxLifetime(10 * time.Minute)
 
 	return &Repos{
-		db:         db,
-		Documents:  NewDocumentRepo(db),
-		Chunks:     NewChunkRepo(db),
-		Claims:     NewClaimRepo(db),
-		Entities:   NewEntityRepo(db),
-		Runs:       NewHypothesisRunRepo(db),
-		Hypotheses: NewHypothesisRepo(db),
-		Feedback:   NewFeedbackRepo(db),
+		db:             db,
+		Documents:      NewDocumentRepo(db),
+		Chunks:         NewChunkRepo(db),
+		Claims:         NewClaimRepo(db),
+		Entities:       NewEntityRepo(db),
+		Runs:           NewHypothesisRunRepo(db),
+		Hypotheses:     NewHypothesisRepo(db),
+		Feedback:       NewFeedbackRepo(db),
+		PlantEquipment: NewPlantEquipmentRepo(db),
 	}, nil
 }
 
@@ -71,6 +73,7 @@ func (r *Repos) MigrateDB() error {
 		&domain.HypothesisRun{},
 		&domain.Hypothesis{},
 		&domain.Feedback{},
+		&domain.PlantEquipment{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

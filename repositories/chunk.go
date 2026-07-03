@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"unicode"
 
 	"hypothesis-factory/domain"
 
@@ -55,18 +57,51 @@ type hybridSearchRow struct {
 	FusedScore       float64
 }
 
+// buildOrTsQuery превращает свободный текст в OR-запрос для to_tsquery
+// ("слово1 | слово2 | ..."). plainto_tsquery — который мы использовали
+// раньше — AND'ит ВСЕ слова запроса: для короткой (2-4 слова) фразы это
+// нормально, но facet-декомпозированные запросы (base + "оборудование и
+// схема классификации: гидроциклоны, диаметр насадок, ...") — это 15-20
+// слов, и требовать буквального совпадения ВСЕХ них в одном чанке означает
+// НОЛЬ совпадений почти всегда (подтверждено: реальный чанк с "ГЦ-660",
+// который лексически идеально релевантен, не проходил фильтр вообще — вся
+// лексическая часть гибридного поиска молча не работала для таких запросов,
+// retrieval держался только на векторной части). to_tsquery применяет ту же
+// стемминг-нормализацию к каждому слову, что и plainto_tsquery — просто с
+// OR вместо AND между ними, так что один совпавший термин уже даёт чанку
+// шанс попасть в кандидаты, а ts_rank сам взвесит по количеству/весу
+// совпадений.
+func buildOrTsQuery(text string) string {
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	seen := make(map[string]bool, len(fields))
+	terms := make([]string, 0, len(fields))
+	for _, f := range fields {
+		f = strings.ToLower(f)
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		terms = append(terms, f)
+	}
+	return strings.Join(terms, " | ")
+}
+
 // HybridSearch фьюзит лексический (ts_rank по русской FTS) и dense (cosine
 // через pgvector HNSW) поиск взвешенной суммой (0.4 lex + 0.6 dense), затем
 // возвращает top-N кандидатов для реранкинга/claim extraction.
 func (r *ChunkRepo) HybridSearch(ctx context.Context, queryText string, queryEmbedding []float32, domainFilter string, limit int) ([]domain.RetrievedChunk, error) {
+	orQuery := buildOrTsQuery(queryText)
 	var rows []hybridSearchRow
 	err := r.db.WithContext(ctx).Raw(`
 		WITH lexical AS (
-			SELECT c.id, ts_rank(c.tsv, plainto_tsquery('russian', ?)) AS lscore
+			SELECT c.id, ts_rank(c.tsv, to_tsquery('russian', ?)) AS lscore
 			FROM chunks c
 			JOIN documents d ON d.id = c.document_id
 			WHERE (? = '' OR d.domain = ?)
-			  AND c.tsv @@ plainto_tsquery('russian', ?)
+			  AND ? <> ''
+			  AND c.tsv @@ to_tsquery('russian', ?)
 			ORDER BY lscore DESC
 			LIMIT 50
 		),
@@ -95,7 +130,7 @@ func (r *ChunkRepo) HybridSearch(ctx context.Context, queryText string, queryEmb
 		JOIN documents d ON d.id = c.document_id
 		ORDER BY f.fused DESC
 		LIMIT ?
-	`, queryText, domainFilter, domainFilter, queryText,
+	`, orQuery, domainFilter, domainFilter, orQuery, orQuery,
 		pgvector.NewVector(queryEmbedding), domainFilter, domainFilter, pgvector.NewVector(queryEmbedding),
 		limit).Scan(&rows).Error
 	if err != nil {

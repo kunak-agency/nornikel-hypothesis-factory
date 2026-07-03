@@ -62,6 +62,7 @@ func (s *Service) StartRun(ctx context.Context, rawText string, rawInput map[str
 	if err != nil {
 		return nil, errs.Wrap(err, errs.ErrTypeInternal, "build problem spec")
 	}
+	s.enrichAvailableEquipment(ctx, &spec)
 
 	run := &domain.HypothesisRun{
 		ProblemSpec:    spec,
@@ -76,6 +77,37 @@ func (s *Service) StartRun(ctx context.Context, rawText string, rawInput map[str
 		return nil, errs.Wrap(err, errs.ErrTypeInternal, "create run")
 	}
 	return run, nil
+}
+
+// enrichAvailableEquipment детерминированно (SQL по имени фабрики, не через
+// RAG-поиск) подмешивает в ProblemSpec.AvailableEquipment реальные модели/
+// параметры оборудования, если фабрика из spec.Plant есть в
+// plant_equipment. Это прямой путь к гипотезам вида "диаметр насадки X→Y" —
+// без этого LLM не может предложить конкретное текущее значение, потому что
+// его физически нет ни в одном retrieved-чанке в грамматически удобной для
+// поиска форме. Ошибка поиска не блокирует прогон — это обогащение, не
+// обязательный шаг.
+func (s *Service) enrichAvailableEquipment(ctx context.Context, spec *domain.ProblemSpec) {
+	if spec.Plant == "" {
+		return
+	}
+	matches, err := s.repos.PlantEquipment.FindByPlantMention(ctx, spec.Plant)
+	if err != nil {
+		logger.LogWarningCtx(ctx, "plant equipment lookup failed for %q: %v", spec.Plant, err)
+		return
+	}
+	seen := make(map[string]bool)
+	for _, e := range matches {
+		desc := e.Model
+		if e.CircuitPosition != "" {
+			desc = fmt.Sprintf("%s (%s)", desc, e.CircuitPosition)
+		}
+		if desc == "" || seen[desc] {
+			continue
+		}
+		seen[desc] = true
+		spec.AvailableEquipment = append(spec.AvailableEquipment, desc)
+	}
 }
 
 // StartRunFromExcel — то же самое, что StartRun, но loss_hotspots и
@@ -113,6 +145,7 @@ func (s *Service) StartRunFromExcel(ctx context.Context, excelData []byte, rawTe
 			metalSet[m.Symbol] = true
 		}
 	}
+	s.enrichAvailableEquipment(ctx, &spec)
 
 	if rawInput == nil {
 		rawInput = map[string]any{}
