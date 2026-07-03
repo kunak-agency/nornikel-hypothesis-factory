@@ -12,12 +12,28 @@ import (
 
 const yandexCompletionURL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
+// maxConcurrentSessions — Yandex Cloud Foundation Models API отдаёт 429
+// ("ai.textGenerationCompletionSessionsCount.count gauge quota limit exceed:
+// allowed 10 requests") при ПРЕВЫШЕНИИ одновременно ОТКРЫТЫХ сессий
+// генерации — это gauge (мгновенное состояние "сколько сейчас в полёте"), не
+// счётчик за окно времени. Значит правильная защита — не "10 штук, потом
+// пауза" (тратит время впустую, когда слоты уже свободны), а семафор с
+// очередью: как только вызов завершается, слот сразу подхватывает следующий
+// ожидающий, без искусственного ожидания. Раньше это было реализовано
+// только локально в claim extraction (свой семафор на 8) — critic.go
+// запускал 3 критика на КАЖДУЮ гипотезу вообще без ограничения (5 гипотез ×
+// 3 критика = 15 одновременных вызовов, гарантированно выше лимита в 10).
+// Семафор здесь, внутри самого клиента, защищает ВСЕ вызовы разом,
+// независимо от того, из какого места пайплайна они пришли.
+const maxConcurrentSessions = 8
+
 // YandexClient — клиент Yandex Cloud Foundation Models completion API.
 type YandexClient struct {
 	APIKey   string
 	FolderID string
 	ModelURI string
 	HTTP     *http.Client
+	sem      chan struct{}
 }
 
 func NewYandexClient(apiKey, folderID, modelURI string) *YandexClient {
@@ -26,6 +42,7 @@ func NewYandexClient(apiKey, folderID, modelURI string) *YandexClient {
 		FolderID: folderID,
 		ModelURI: modelURI,
 		HTTP:     &http.Client{Timeout: 90 * time.Second},
+		sem:      make(chan struct{}, maxConcurrentSessions),
 	}
 }
 
@@ -94,6 +111,19 @@ func (c *YandexClient) Complete(ctx context.Context, req CompleteRequest) (Compl
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Api-Key "+c.APIKey)
 	httpReq.Header.Set("x-folder-id", c.FolderID)
+
+	// Занимаем слот прямо перед отправкой (не раньше — маршалинг/сборка
+	// запроса не считаются "открытой сессией" на стороне Yandex) и
+	// освобождаем сразу по получении ответа, чтобы следующий в очереди
+	// стартовал немедленно, без искусственной паузы. Уважаем отмену
+	// контекста, пока ждём своей очереди — не блокируемся навечно, если
+	// вызывающий код уже сдался (таймаут пайплайна и т.п.).
+	select {
+	case c.sem <- struct{}{}:
+	case <-ctx.Done():
+		return CompleteResponse{}, ctx.Err()
+	}
+	defer func() { <-c.sem }()
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {

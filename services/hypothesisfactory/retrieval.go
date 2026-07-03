@@ -11,13 +11,11 @@ import (
 	"hypothesis-factory/repositories"
 )
 
-// retrievalFacet — фасет запроса + доля topK-бюджета, гарантированно
-// зарезервированная за ним. Веса, не равные доли — базовый факт остаётся
-// главным сигналом (он же формулировка проблемы), остальные закрывают
-// конкретный систематический слепой угол.
+// retrievalFacet — фасет запроса + минимальная гарантированная "квота
+// анти-голодания" (не доля topK — см. ниже, почему это разные вещи).
 type retrievalFacet struct {
-	suffix string // "" = базовый запрос как есть
-	weight float64
+	suffix   string // "" = базовый запрос как есть
+	minFloor int    // сколько слотов гарантированы фасету, даже если его скор ниже других
 }
 
 // retrievalFacets — детерминированная (не LLM-генерируемая на лету)
@@ -51,18 +49,32 @@ type retrievalFacet struct {
 //
 // Фасеты сейчас specific для домена "flotation" — при добавлении новых
 // доменов потребуется своя таксономия фасетов на домен (TODO, не блокер).
+//
+// minFloor — не "справедливая доля", а анти-голодание: гарантия, что фасет
+// не обнулится структурно из-за того, что его тема хуже ложится в лексику
+// запроса. Раньше здесь был жёсткий %-бюджет (50/25/25) — тот же самый
+// изъян, что и у single-query: если у фасета "оборудование" по факту 20
+// сильных кандидатов, а у базового — 3 слабых, жёсткий процент всё равно
+// режет оборудование до квоты, вместо того чтобы отдать простаивающие слоты
+// туда, где контент реально лучше. Теперь: каждый фасет гарантированно
+// получает minFloor лучших своих кандидатов, а ВЕСЬ остаток topK — открытая
+// конкуренция по сырому reranker-скору между всеми фасетами разом (скор
+// bge-reranker сигмоид-калиброван, т.е. интерпретируется как P(релевантно
+// своему запросу) и потому сравним между разными facet-запросами).
 var retrievalFacets = []retrievalFacet{
-	{suffix: "", weight: 0.5},
-	{suffix: "оборудование и схема классификации: гидроциклоны, диаметр насадок, классификаторы, грохота, магнитная сепарация", weight: 0.25},
-	{suffix: "измельчение: степень измельчения, крупность помола, футеровка мельниц, цепь измельчения", weight: 0.25},
+	{suffix: "", minFloor: 3},
+	{suffix: "оборудование и схема классификации: гидроциклоны, диаметр насадок, классификаторы, грохота, магнитная сепарация", minFloor: 2},
+	{suffix: "измельчение: степень измельчения, крупность помола, футеровка мельниц, цепь измельчения", minFloor: 2},
 }
 
 // retrieve — facet-декомпозированный гибридный (лексика+вектор) поиск:
 // параллельно по каждому фасету — свой embed, свой HybridSearch, свой
-// reranking СВОИМ запросом — затем каждый фасет отдаёт свою зарезервированную
-// долю итогового topK (дедуп по chunk ID: чанк, уже добавленный фасетом
-// повыше приоритетом, не дублируется фасетом пониже) перед (дорогими)
-// вызовами claim extraction.
+// reranking СВОИМ запросом. Отбор в итоговый topK — два прохода: (1) каждый
+// фасет берёт свои minFloor лучших (анти-голодание), (2) весь остаток
+// бюджета заполняется лучшими по скору кандидатами из ОБЪЕДИНЁННОГО пула
+// (dedup по chunk ID), независимо от того, какому фасету они принадлежат —
+// сильный фасет с запасом хорошего контента не режется искусственно, слабый
+// не разбавляется мусором ради процента.
 func retrieve(ctx context.Context, chunks *repositories.ChunkRepo, pyworker *externalApi.PyworkerClient, spec domain.ProblemSpec, domainFilter string, topK int) ([]domain.RetrievedChunk, error) {
 	baseQuery := buildRetrievalQuery(spec)
 
@@ -117,19 +129,18 @@ func retrieve(ctx context.Context, chunks *repositories.ChunkRepo, pyworker *ext
 	succeeded := false
 	seen := make(map[string]bool)
 	var candidates []domain.RetrievedChunk
+
+	// Проход 1: анти-голодание — каждый фасет забирает свои minFloor лучших,
+	// пока их не отобрал более приоритетный фасет.
 	for i, r := range results {
 		if r.err != nil {
 			lastErr = r.err
 			continue
 		}
 		succeeded = true
-		budget := int(float64(topK)*retrievalFacets[i].weight + 0.5)
-		if budget < 1 {
-			budget = 1
-		}
 		taken := 0
 		for _, c := range r.candidates {
-			if taken >= budget {
+			if taken >= retrievalFacets[i].minFloor {
 				break
 			}
 			id := c.ID.String()
@@ -144,6 +155,34 @@ func retrieve(ctx context.Context, chunks *repositories.ChunkRepo, pyworker *ext
 	if !succeeded {
 		return nil, fmt.Errorf("all retrieval facets failed: %w", lastErr)
 	}
+
+	// Проход 2: открытый пул — весь остаток topK заполняется лучшими по
+	// reranker-скору кандидатами из всех фасетов сразу (сигмоид-скор
+	// сравним между разными facet-запросами, это не сырое косинусное
+	// сходство с разными точками отсчёта).
+	var pool []domain.RetrievedChunk
+	for _, r := range results {
+		for _, c := range r.candidates {
+			if !seen[c.ID.String()] {
+				pool = append(pool, c)
+			}
+		}
+	}
+	sortByFusedScoreDesc(pool)
+	remaining := topK - len(candidates)
+	for _, c := range pool {
+		if remaining <= 0 {
+			break
+		}
+		id := c.ID.String()
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		candidates = append(candidates, c)
+		remaining--
+	}
+
 	return candidates, nil
 }
 
