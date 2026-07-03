@@ -11,17 +11,22 @@ import (
 	"strings"
 
 	"hypothesis-factory/domain"
+
+	"github.com/google/uuid"
 )
 
 var csvHeader = []string{
 	"rank", "statement", "mechanism", "kpi_metric", "kpi_direction", "kpi_magnitude",
 	"novelty_reason", "risks", "verification_plan", "evidence_strength", "feasibility",
-	"impact", "novelty", "risk_penalty", "confidence", "total_score", "critic_notes", "evidence_refs_count",
+	"impact", "novelty", "risk_penalty", "confidence", "total_score", "critic_notes",
+	"evidence_refs_count", "evidence_sources",
 }
 
 // ToCSV — одна строка на гипотезу, для табличного просмотра/фильтрации в
 // Excel; ProblemSpec в CSV не идёт (не табличные данные), только гипотезы.
-func ToCSV(hyps []domain.Hypothesis) ([]byte, error) {
+// sources (может быть nil) — hypothesis.ID -> названия документов-источников
+// evidence, см. hypothesisfactory.BuildEvidenceSources.
+func ToCSV(hyps []domain.Hypothesis, sources map[uuid.UUID][]string) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString("\xEF\xBB\xBF") // UTF-8 BOM — иначе Excel на Windows показывает кириллицу как мусор.
 	w := csv.NewWriter(&buf)
@@ -54,6 +59,7 @@ func ToCSV(hyps []domain.Hypothesis) ([]byte, error) {
 			formatFloat(h.Scores.Total),
 			h.CriticNotes,
 			strconv.Itoa(len(h.EvidenceRefs)),
+			strings.Join(sources[h.ID], " | "),
 		}
 		if err := w.Write(row); err != nil {
 			return nil, fmt.Errorf("write row: %w", err)

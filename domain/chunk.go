@@ -45,4 +45,8 @@ type RetrievedChunk struct {
 	FusedScore    float64
 	DocumentTitle string
 	SourceType    string
+	// DocumentMetadata — authors/year/edition, если заданы при загрузке
+	// документа (см. handlers.IngestDocument); отдельно от Chunk.Metadata,
+	// который несёт article_authors/article_year для статей через GROBID.
+	DocumentMetadata map[string]any
 }

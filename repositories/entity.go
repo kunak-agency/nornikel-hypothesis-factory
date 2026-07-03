@@ -52,3 +52,41 @@ func (r *EntityRepo) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.En
 	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&out).Error
 	return out, err
 }
+
+// FeedbackStats — сколько раз claims об этой сущности цитировались
+// гипотезами с тем или иным экспертным вердиктом, по всем прошлым прогонам.
+type FeedbackStats struct {
+	EntityID      uuid.UUID
+	Confirmed     int
+	Rejected      int
+	NeedsRevision int
+}
+
+// GetFeedbackStats — "обучение на фидбэке" через граф памяти: entity уже
+// резолвится между прогонами (embedding similarity dedup в
+// services/hypothesisfactory/entities.go), так что достаточно поднять
+// историю подтверждений/отклонений по entity_id — не нужен отдельный лог
+// "похожих гипотез", граф уже несёт эту связь через claims->hypotheses->
+// feedback.
+func (r *EntityRepo) GetFeedbackStats(ctx context.Context, entityIDs []uuid.UUID) ([]FeedbackStats, error) {
+	if len(entityIDs) == 0 {
+		return nil, nil
+	}
+	var out []FeedbackStats
+	err := r.db.WithContext(ctx).Raw(`
+		WITH claim_entities AS (
+			SELECT id AS claim_id, subject_entity_id AS entity_id FROM claims WHERE subject_entity_id = ANY(?)
+			UNION ALL
+			SELECT id AS claim_id, metric_entity_id AS entity_id FROM claims WHERE metric_entity_id = ANY(?)
+		)
+		SELECT ce.entity_id,
+		       count(*) FILTER (WHERE f.verdict = 'confirmed') AS confirmed,
+		       count(*) FILTER (WHERE f.verdict = 'rejected') AS rejected,
+		       count(*) FILTER (WHERE f.verdict = 'needs_revision') AS needs_revision
+		FROM claim_entities ce
+		JOIN hypotheses h ON h.evidence_refs @> jsonb_build_array(ce.claim_id::text)
+		JOIN feedbacks f ON f.hypothesis_id = h.id
+		GROUP BY ce.entity_id
+	`, entityIDs, entityIDs).Scan(&out).Error
+	return out, err
+}

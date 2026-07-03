@@ -10,6 +10,19 @@ definitions:
       metric:
         type: string
     type: object
+  domain.RankingWeights:
+    properties:
+      evidence:
+        type: number
+      feasibility:
+        type: number
+      impact:
+        type: number
+      novelty:
+        type: number
+      risk:
+        type: number
+    type: object
   domain.Scores:
     properties:
       confidence:
@@ -29,6 +42,10 @@ definitions:
     type: object
   domain.VerificationStep:
     properties:
+      estimatedCost:
+        type: string
+      estimatedDuration:
+        type: string
       resource:
         type: string
       step:
@@ -88,6 +105,32 @@ definitions:
     - ErrTypeInternal
   in.CreateRunRequest:
     properties:
+      domain:
+        description: Domain — база знаний какого домена используется (по умолчанию
+          flotation).
+        example: flotation
+        type: string
+      excludedTopics:
+        description: |-
+          ExcludedTopics — направления/подходы, которые генерация должна
+          обходить (например, уже испробованные и отклонённые ранее).
+        items:
+          type: string
+        type: array
+      language:
+        description: Language — язык гипотез/обоснований в ответе (по умолчанию ru).
+        enum:
+        - ru
+        - en
+        - zh
+        example: ru
+        type: string
+      rankingWeights:
+        allOf:
+        - $ref: '#/definitions/domain.RankingWeights'
+        description: |-
+          RankingWeights — режим экспертной настройки: переопределение весов
+          критериев ранжирования (нетронутые поля = дефолт).
       rawInput:
         additionalProperties: {}
         type: object
@@ -282,6 +325,8 @@ definitions:
         type: string
       createdAt:
         type: string
+      domain:
+        type: string
       error:
         type: string
       hypotheses:
@@ -289,6 +334,15 @@ definitions:
           $ref: '#/definitions/out.HypothesisResponse'
         type: array
       id:
+        type: string
+      knowledgeGaps:
+        description: |-
+          KnowledgeGaps — металлы/точки потерь из ProblemSpec, слабо покрытые
+          извлечёнными claims (детерминированная проверка, не LLM-догадка).
+        items:
+          type: string
+        type: array
+      language:
         type: string
       problemSpec:
         $ref: '#/definitions/out.ProblemSpecResponse'
@@ -336,7 +390,10 @@ paths:
         name: title
         type: string
       - default: report
-        description: book | regulation | scheme | historical_case | report
+        description: book | regulation | scheme | historical_case | report | article
+          | patent (article = GROBID + Semantic Scholar; patent — через обычный Docling-путь,
+          structured-парсинг формулы изобретения не делаем — используйте authors/year
+          для инвентора/даты подачи)
         in: formData
         name: sourceType
         type: string
@@ -349,6 +406,18 @@ paths:
         description: Язык
         in: formData
         name: language
+        type: string
+      - description: Авторы (через запятую), если известны
+        in: formData
+        name: authors
+        type: string
+      - description: Год издания/публикации, если известен
+        in: formData
+        name: year
+        type: string
+      - description: Издание/версия, если известно
+        in: formData
+        name: edition
         type: string
       produces:
       - application/json
@@ -591,6 +660,46 @@ paths:
       summary: DOCX-отчёт по прогону
       tags:
       - runs
+  /runs/{runId}/report.jira.json:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      - description: Ключ проекта Jira, напр. HYP
+        in: query
+        name: projectKey
+        required: true
+        type: string
+      - default: Task
+        description: Тип задачи
+        in: query
+        name: issueType
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Экспорт гипотез как задач в Jira-совместимом JSON
+      tags:
+      - runs
   /runs/{runId}/report.md:
     get:
       parameters:
@@ -655,6 +764,24 @@ paths:
       - description: Свободный текст с доп. контекстом (цель, оборудование, ограничения)
         in: formData
         name: rawText
+        type: string
+      - default: flotation
+        description: База знаний какого домена используется
+        in: formData
+        name: domain
+        type: string
+      - default: ru
+        description: 'Язык гипотез: ru|en|zh'
+        in: formData
+        name: language
+        type: string
+      - description: JSON domain.RankingWeights — режим экспертной настройки весов
+        in: formData
+        name: rankingWeights
+        type: string
+      - description: JSON-массив строк — направления, которые генерация должна обходить
+        in: formData
+        name: excludedTopics
         type: string
       produces:
       - application/json

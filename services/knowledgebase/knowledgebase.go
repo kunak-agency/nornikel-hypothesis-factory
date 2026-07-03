@@ -28,7 +28,7 @@ type IngestInput struct {
 	Filename   string
 	Data       []byte
 	Title      string
-	SourceType string // book | regulation | scheme | historical_case | report
+	SourceType string // book | regulation | scheme | historical_case | report | article
 	Domain     string
 	Language   string
 	Metadata   map[string]any
@@ -58,9 +58,18 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (int, error) {
 		return 0, errs.Wrap(err, errs.ErrTypeInternal, "create document")
 	}
 
-	chunks, err := s.pyworker.Ingest(ctx, in.Filename, in.Data)
+	// sourceType=article — научная статья: GROBID (структура/цитируемость)
+	// вместо Docling общего назначения, требует docker-compose.ingestion.yml
+	// (grobid-сервис не часть runtime-сборки).
+	var chunks []externalApi.IngestChunk
+	var err error
+	if in.SourceType == "article" {
+		chunks, err = s.pyworker.IngestArticle(ctx, in.Filename, in.Data)
+	} else {
+		chunks, err = s.pyworker.Ingest(ctx, in.Filename, in.Data)
+	}
 	if err != nil {
-		return 0, errs.Wrap(err, errs.ErrTypeInternal, "docling ingest failed")
+		return 0, errs.Wrap(err, errs.ErrTypeInternal, "ingest failed")
 	}
 	if len(chunks) == 0 {
 		return 0, nil

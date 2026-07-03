@@ -105,6 +105,32 @@ func buildParentContext(ctx context.Context, chunkRepo *repositories.ChunkRepo, 
 	return b.String()
 }
 
+// claimSourceMetadata собирает всё, что известно об источнике claim'а:
+// заголовок/тип документа всегда, плюс авторы/год из любого источника,
+// который их дал — chunk.Metadata (article_authors/article_year, ставит
+// GROBID-путь для статей) в приоритете, иначе DocumentMetadata (authors/
+// year/edition, ставится вручную при загрузке через handlers.IngestDocument).
+func claimSourceMetadata(chunk domain.RetrievedChunk) map[string]any {
+	meta := map[string]any{
+		"document_title": chunk.DocumentTitle,
+		"source_type":    chunk.SourceType,
+	}
+	if v, ok := chunk.Metadata["article_authors"].(string); ok && v != "" {
+		meta["authors"] = v
+	} else if v, ok := chunk.DocumentMetadata["authors"].(string); ok && v != "" {
+		meta["authors"] = v
+	}
+	if v, ok := chunk.Metadata["article_year"].(string); ok && v != "" {
+		meta["year"] = v
+	} else if v, ok := chunk.DocumentMetadata["year"].(string); ok && v != "" {
+		meta["year"] = v
+	}
+	if v, ok := chunk.DocumentMetadata["edition"].(string); ok && v != "" {
+		meta["edition"] = v
+	}
+	return meta
+}
+
 func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, chunk domain.RetrievedChunk, parentContent string) []domain.Claim {
 	userMsg := fmt.Sprintf("Источник: %s (%s)\nРаздел: %s\n\nФрагмент (с окружающим контекстом):\n%s",
 		chunk.DocumentTitle, chunk.SourceType, chunk.Section, parentContent)
@@ -171,6 +197,12 @@ func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, c
 			SourceConfidence: r.SourceConfidence,
 			ConflictFlag:     r.ConflictFlag,
 			Quote:            r.Quote,
+			// document_title/source_type/authors/год — иначе итоговый отчёт
+			// может сказать судье только "3 ссылки на evidence", не откуда
+			// они; это ровно то, что даёт доверие "evidence-backed" гипотезе
+			// и закрывает требование кейса "поддержка метаданных: источники,
+			// даты, авторы".
+			Metadata: claimSourceMetadata(chunk),
 		})
 	}
 	return claims

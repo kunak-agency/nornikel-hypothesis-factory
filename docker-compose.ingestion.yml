@@ -21,3 +21,20 @@ services:
       - render
     environment:
       HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+      GROBID_URL: http://grobid:8070
+    depends_on:
+      grobid:
+        condition: service_healthy
+
+  # Scientific-paper structure parser (title/authors/abstract/sections,
+  # citation-aware) — used only by POST /ingest-article, for real academic
+  # PDFs the team brings in. Books/regulations/schemes still go through
+  # Docling via /ingest; GROBID is tuned for paper layout, not textbooks.
+  grobid:
+    image: grobid/grobid:0.8.1
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8070/api/isalive || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s

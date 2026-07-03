@@ -4,10 +4,12 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"strings"
 
 	"hypothesis-factory/domain"
 
 	"github.com/go-pdf/fpdf"
+	"github.com/google/uuid"
 )
 
 // Шрифты DejaVu Sans встроены в бинарник (go:embed), а не подгружаются с
@@ -27,8 +29,11 @@ const (
 )
 
 // ToPDF рендерит тот же отчёт, что и Markdown/DOCX-версии, в PDF —
-// карточками гипотез с оценками, а не сплошным текстом.
-func ToPDF(spec domain.ProblemSpec, hyps []domain.Hypothesis) ([]byte, error) {
+// карточками гипотез с оценками, а не сплошным текстом. sources (может
+// быть nil) — hypothesis.ID -> названия документов-источников evidence, см.
+// hypothesisfactory.BuildEvidenceSources. knowledgeGaps — из
+// HypothesisRun.KnowledgeGaps, тоже может быть nil.
+func ToPDF(spec domain.ProblemSpec, hyps []domain.Hypothesis, sources map[uuid.UUID][]string, knowledgeGaps []string) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes(pdfFontFamily, "", dejaVuRegular)
 	pdf.AddUTF8FontFromBytes(pdfFontFamily, "B", dejaVuBold)
@@ -60,6 +65,11 @@ func ToPDF(spec domain.ProblemSpec, hyps []domain.Hypothesis) ([]byte, error) {
 		pdf.SetFont(pdfFontFamily, "B", 11)
 		pdf.MultiCell(contentWidth, 6, "Ограничения:", "", "L", false)
 		writeBulletList(pdf, contentWidth, spec.Constraints)
+	}
+	if len(knowledgeGaps) > 0 {
+		pdf.SetFont(pdfFontFamily, "B", 11)
+		pdf.MultiCell(contentWidth, 6, "Пробелы в знаниях (слабое покрытие evidence):", "", "L", false)
+		writeBulletList(pdf, contentWidth, knowledgeGaps)
 	}
 	pdf.Ln(4)
 	drawSeparator(pdf, contentWidth)
@@ -98,7 +108,11 @@ func ToPDF(spec domain.ProblemSpec, hyps []domain.Hypothesis) ([]byte, error) {
 		if h.CriticNotes != "" {
 			writeLabeledParagraph(pdf, contentWidth, "Замечание рецензента: ", h.CriticNotes)
 		}
-		writeLabeledParagraph(pdf, contentWidth, "Ссылок на evidence: ", fmt.Sprintf("%d", len(h.EvidenceRefs)))
+		if titles := sources[h.ID]; len(titles) > 0 {
+			writeLabeledParagraph(pdf, contentWidth, fmt.Sprintf("Источники (%d ссылок на evidence): ", len(h.EvidenceRefs)), strings.Join(titles, "; "))
+		} else {
+			writeLabeledParagraph(pdf, contentWidth, "Ссылок на evidence: ", fmt.Sprintf("%d", len(h.EvidenceRefs)))
+		}
 
 		pdf.Ln(2)
 		drawSeparator(pdf, contentWidth)

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"strings"
 
 	"hypothesis-factory/domain"
 
 	docx "github.com/fumiama/go-docx"
+	"github.com/google/uuid"
 )
 
 // docxTemplate — минимальный пустой .docx (сгенерирован LibreOffice).
@@ -23,7 +25,7 @@ var docxTemplate []byte
 // ToDOCX рендерит тот же отчёт, что и Markdown/PDF-версии, в .docx —
 // карточками гипотез, чтобы можно было открыть и точечно править/
 // комментировать в Word перед сдачей.
-func ToDOCX(spec domain.ProblemSpec, hyps []domain.Hypothesis) ([]byte, error) {
+func ToDOCX(spec domain.ProblemSpec, hyps []domain.Hypothesis, sources map[uuid.UUID][]string, knowledgeGaps []string) ([]byte, error) {
 	doc, err := docx.Parse(bytes.NewReader(docxTemplate), int64(len(docxTemplate)))
 	if err != nil {
 		return nil, fmt.Errorf("parse docx template: %w", err)
@@ -57,6 +59,12 @@ func ToDOCX(spec domain.ProblemSpec, hyps []domain.Hypothesis) ([]byte, error) {
 			doc.AddParagraph().AddText("• " + c)
 		}
 	}
+	if len(knowledgeGaps) > 0 {
+		doc.AddParagraph().AddText("Пробелы в знаниях (слабое покрытие evidence):").Bold()
+		for _, g := range knowledgeGaps {
+			doc.AddParagraph().AddText("• " + g)
+		}
+	}
 	doc.AddParagraph().AddText(separatorLine)
 
 	for _, h := range hyps {
@@ -88,7 +96,11 @@ func ToDOCX(spec domain.ProblemSpec, hyps []domain.Hypothesis) ([]byte, error) {
 		if h.CriticNotes != "" {
 			addLabeledParagraph(doc, "Замечание рецензента: ", h.CriticNotes)
 		}
-		addLabeledParagraph(doc, "Ссылок на evidence: ", fmt.Sprintf("%d", len(h.EvidenceRefs)))
+		if titles := sources[h.ID]; len(titles) > 0 {
+			addLabeledParagraph(doc, fmt.Sprintf("Источники (%d ссылок на evidence): ", len(h.EvidenceRefs)), strings.Join(titles, "; "))
+		} else {
+			addLabeledParagraph(doc, "Ссылок на evidence: ", fmt.Sprintf("%d", len(h.EvidenceRefs)))
+		}
 
 		doc.AddParagraph().AddText(separatorLine)
 	}

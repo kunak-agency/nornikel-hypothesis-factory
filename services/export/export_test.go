@@ -37,8 +37,17 @@ func sampleHypotheses() []domain.Hypothesis {
 	}
 }
 
+func sampleSources(hyps []domain.Hypothesis) map[uuid.UUID][]string {
+	out := map[uuid.UUID][]string{}
+	for _, h := range hyps {
+		out[h.ID] = []string{"Абрамов А.А. — Флотационные методы обогащения, 4-е изд., 2016"}
+	}
+	return out
+}
+
 func TestToCSV(t *testing.T) {
-	out, err := ToCSV(sampleHypotheses())
+	hyps := sampleHypotheses()
+	out, err := ToCSV(hyps, sampleSources(hyps))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +56,13 @@ func TestToCSV(t *testing.T) {
 	}
 }
 
+func sampleGaps() []string {
+	return []string{"По металлу \"Cu\" в извлечённых claims нет явного покрытия"}
+}
+
 func TestToPDF(t *testing.T) {
-	out, err := ToPDF(sampleSpec(), sampleHypotheses())
+	hyps := sampleHypotheses()
+	out, err := ToPDF(sampleSpec(), hyps, sampleSources(hyps), sampleGaps())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +72,8 @@ func TestToPDF(t *testing.T) {
 }
 
 func TestToDOCX(t *testing.T) {
-	out, err := ToDOCX(sampleSpec(), sampleHypotheses())
+	hyps := sampleHypotheses()
+	out, err := ToDOCX(sampleSpec(), hyps, sampleSources(hyps), sampleGaps())
 	if err != nil {
 		t.Fatal(err)
 	}

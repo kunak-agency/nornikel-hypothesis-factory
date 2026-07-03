@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 
 	"hypothesis-factory/domain"
 
@@ -33,20 +34,25 @@ func (r *ChunkRepo) GetNeighbors(ctx context.Context, documentID uuid.UUID, ordi
 	return chunks, err
 }
 
-// hybridSearchRow — Metadata сознательно не выбирается: downstream (claim
-// extraction) читает только ID/Content/Section/DocumentTitle/SourceType/скоринг.
+// hybridSearchRow — c.metadata/d.metadata выбираются как raw JSON ([]byte),
+// не через GORM-сериализатор (это raw SQL, не gorm.Find) — распаковываются
+// вручную в HybridSearch. Нужны для authors/year/edition (document.metadata)
+// и article_authors/article_year (chunk.metadata из GROBID-пути) — без этого
+// claim extraction не может процитировать источник детальнее заголовка.
 type hybridSearchRow struct {
-	ID            string
-	DocumentID    string
-	Ordinal       int
-	Section       string
-	Content       string
-	ContentType   string
-	DocumentTitle string
-	SourceType    string
-	LexicalScore  float64
-	VectorScore   float64
-	FusedScore    float64
+	ID               string
+	DocumentID       string
+	Ordinal          int
+	Section          string
+	Content          string
+	ContentType      string
+	DocumentTitle    string
+	SourceType       string
+	ChunkMetadata    []byte
+	DocumentMetadata []byte
+	LexicalScore     float64
+	VectorScore      float64
+	FusedScore       float64
 }
 
 // HybridSearch фьюзит лексический (ts_rank по русской FTS) и dense (cosine
@@ -82,6 +88,7 @@ func (r *ChunkRepo) HybridSearch(ctx context.Context, queryText string, queryEmb
 		)
 		SELECT c.id, c.document_id, c.ordinal, c.section, c.content, c.content_type,
 		       d.title AS document_title, d.source_type,
+		       c.metadata AS chunk_metadata, d.metadata AS document_metadata,
 		       f.lscore AS lexical_score, f.vscore AS vector_score, f.fused AS fused_score
 		FROM fused f
 		JOIN chunks c ON c.id = f.id
@@ -105,6 +112,13 @@ func (r *ChunkRepo) HybridSearch(ctx context.Context, queryText string, queryEmb
 		if err != nil {
 			return nil, err
 		}
+		var chunkMeta, docMeta map[string]any
+		if len(row.ChunkMetadata) > 0 {
+			_ = json.Unmarshal(row.ChunkMetadata, &chunkMeta)
+		}
+		if len(row.DocumentMetadata) > 0 {
+			_ = json.Unmarshal(row.DocumentMetadata, &docMeta)
+		}
 		out = append(out, domain.RetrievedChunk{
 			Chunk: domain.Chunk{
 				ID:          id,
@@ -113,11 +127,13 @@ func (r *ChunkRepo) HybridSearch(ctx context.Context, queryText string, queryEmb
 				Section:     row.Section,
 				Content:     row.Content,
 				ContentType: row.ContentType,
+				Metadata:    chunkMeta,
 			},
-			DocumentTitle: row.DocumentTitle,
-			SourceType:    row.SourceType,
-			LexicalScore:  row.LexicalScore,
-			VectorScore:   row.VectorScore,
+			DocumentTitle:    row.DocumentTitle,
+			SourceType:       row.SourceType,
+			DocumentMetadata: docMeta,
+			LexicalScore:     row.LexicalScore,
+			VectorScore:      row.VectorScore,
 			FusedScore:    row.FusedScore,
 		})
 	}

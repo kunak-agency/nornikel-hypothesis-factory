@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"hypothesis-factory/domain"
@@ -49,4 +50,21 @@ func (r *HypothesisRunRepo) MarkDone(ctx context.Context, id uuid.UUID) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).Model(&domain.HypothesisRun{}).Where("id = ?", id).
 		Updates(map[string]any{"status": domain.RunStatusDone, "completed_at": now}).Error
+}
+
+func (r *HypothesisRunRepo) UpdateKnowledgeGaps(ctx context.Context, id uuid.UUID, gaps []string) error {
+	if gaps == nil {
+		gaps = []string{}
+	}
+	// Update() с column name + raw Go value обходит GORM-сериализатор
+	// (serializer:json на поле модели) — тот применяется только когда апдейт
+	// идёт через сам struct-field. Раз мы бьём по колонке напрямую,
+	// сериализуем в JSON сами, иначе Postgres видит Go-слайс как composite
+	// (record) литерал и ругается на несовпадение типов с jsonb.
+	raw, err := json.Marshal(gaps)
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&domain.HypothesisRun{}).Where("id = ?", id).
+		Update("knowledge_gaps", raw).Error
 }

@@ -34,23 +34,31 @@ func ProblemSpecFromDomain(s domain.ProblemSpec) ProblemSpecResponse {
 }
 
 type RunResponse struct {
-	ID          uuid.UUID            `json:"id"`
-	Status      string               `json:"status" example:"retrieving"`
-	ProblemSpec ProblemSpecResponse  `json:"problemSpec"`
-	Error       string               `json:"error,omitempty"`
-	CreatedAt   time.Time            `json:"createdAt"`
-	CompletedAt *time.Time           `json:"completedAt,omitempty"`
-	Hypotheses  []HypothesisResponse `json:"hypotheses,omitempty"`
+	ID          uuid.UUID           `json:"id"`
+	Status      string              `json:"status" example:"retrieving"`
+	ProblemSpec ProblemSpecResponse `json:"problemSpec"`
+	Domain      string              `json:"domain"`
+	Language    string              `json:"language"`
+	// KnowledgeGaps — металлы/точки потерь из ProblemSpec, слабо покрытые
+	// извлечёнными claims (детерминированная проверка, не LLM-догадка).
+	KnowledgeGaps []string             `json:"knowledgeGaps,omitempty"`
+	Error         string               `json:"error,omitempty"`
+	CreatedAt     time.Time            `json:"createdAt"`
+	CompletedAt   *time.Time           `json:"completedAt,omitempty"`
+	Hypotheses    []HypothesisResponse `json:"hypotheses,omitempty"`
 }
 
 func RunFromDomain(r *domain.HypothesisRun, hyps []domain.Hypothesis) RunResponse {
 	resp := RunResponse{
-		ID:          r.ID,
-		Status:      r.Status,
-		ProblemSpec: ProblemSpecFromDomain(r.ProblemSpec),
-		Error:       r.Error,
-		CreatedAt:   r.CreatedAt,
-		CompletedAt: r.CompletedAt,
+		ID:            r.ID,
+		Status:        r.Status,
+		ProblemSpec:   ProblemSpecFromDomain(r.ProblemSpec),
+		Domain:        r.Domain,
+		Language:      r.Language,
+		KnowledgeGaps: r.KnowledgeGaps,
+		Error:         r.Error,
+		CreatedAt:     r.CreatedAt,
+		CompletedAt:   r.CompletedAt,
 	}
 	if hyps != nil {
 		resp.Hypotheses = make([]HypothesisResponse, 0, len(hyps))

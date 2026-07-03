@@ -29,6 +29,7 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 	runs.Get("/:runId/report.pdf", hm.GetRunReportPDF)
 	runs.Get("/:runId/report.docx", hm.GetRunReportDOCX)
 	runs.Get("/:runId/report.csv", hm.GetRunReportCSV)
+	runs.Get("/:runId/report.jira.json", hm.GetRunReportJira)
 	runs.Get("/:runId/graph", hm.GetRunGraph)
 
 	hypotheses := v1.Group("/hypotheses")

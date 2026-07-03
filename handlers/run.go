@@ -36,7 +36,16 @@ func (h *Handler) CreateRun(c *fiber.Ctx) error {
 		return err
 	}
 
-	run, err := h.services.Pipeline.StartRun(c.UserContext(), body.RawText, body.RawInput)
+	opts := hypothesisfactory.StartRunOptions{
+		Domain:         body.Domain,
+		Language:       body.Language,
+		ExcludedTopics: body.ExcludedTopics,
+	}
+	if body.RankingWeights != nil {
+		opts.RankingWeights = *body.RankingWeights
+	}
+
+	run, err := h.services.Pipeline.StartRun(c.UserContext(), body.RawText, body.RawInput, opts)
 	if err != nil {
 		return err
 	}
@@ -54,8 +63,12 @@ func (h *Handler) CreateRun(c *fiber.Ctx) error {
 // @Tags         runs
 // @Accept       multipart/form-data
 // @Produce      json
-// @Param        file     formData  file    true   "Хвосты *.xlsx"
-// @Param        rawText  formData  string  false  "Свободный текст с доп. контекстом (цель, оборудование, ограничения)"
+// @Param        file            formData  file    true   "Хвосты *.xlsx"
+// @Param        rawText         formData  string  false  "Свободный текст с доп. контекстом (цель, оборудование, ограничения)"
+// @Param        domain          formData  string  false  "База знаний какого домена используется"                              default(flotation)
+// @Param        language        formData  string  false  "Язык гипотез: ru|en|zh"                                              default(ru)
+// @Param        rankingWeights  formData  string  false  "JSON domain.RankingWeights — режим экспертной настройки весов"
+// @Param        excludedTopics  formData  string  false  "JSON-массив строк — направления, которые генерация должна обходить"
 // @Success      202  {object}  out.RunResponse
 // @Failure      400  {object}  errs.Error
 // @Failure      422  {object}  errs.Error
@@ -83,7 +96,22 @@ func (h *Handler) CreateRunFromExcel(c *fiber.Ctx) error {
 		}
 	}
 
-	run, err := h.services.Pipeline.StartRunFromExcel(c.UserContext(), data, c.FormValue("rawText"), rawInput)
+	opts := hypothesisfactory.StartRunOptions{
+		Domain:   c.FormValue("domain"),
+		Language: c.FormValue("language"),
+	}
+	if raw := c.FormValue("rankingWeights"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &opts.RankingWeights); err != nil {
+			return errs.NewBadRequestError("invalid rankingWeights json: " + err.Error())
+		}
+	}
+	if raw := c.FormValue("excludedTopics"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &opts.ExcludedTopics); err != nil {
+			return errs.NewBadRequestError("invalid excludedTopics json: " + err.Error())
+		}
+	}
+
+	run, err := h.services.Pipeline.StartRunFromExcel(c.UserContext(), data, c.FormValue("rawText"), rawInput, opts)
 	if err != nil {
 		return err
 	}
@@ -168,7 +196,12 @@ func (h *Handler) GetRunReportMarkdown(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	md := hypothesisfactory.RenderMarkdownReport(run.ProblemSpec, hyps)
+	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
+	if err != nil {
+		return err
+	}
+	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
+	md := hypothesisfactory.RenderMarkdownReport(run.ProblemSpec, hyps, sources, run.KnowledgeGaps)
 	c.Set(fiber.HeaderContentType, "text/markdown; charset=utf-8")
 	return c.SendString(md)
 }
@@ -191,7 +224,12 @@ func (h *Handler) GetRunReportPDF(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	pdfBytes, err := export.ToPDF(run.ProblemSpec, hyps)
+	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
+	if err != nil {
+		return err
+	}
+	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
+	pdfBytes, err := export.ToPDF(run.ProblemSpec, hyps, sources, run.KnowledgeGaps)
 	if err != nil {
 		return errs.NewInternalError("render pdf: " + err.Error())
 	}
@@ -218,7 +256,12 @@ func (h *Handler) GetRunReportDOCX(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	docxBytes, err := export.ToDOCX(run.ProblemSpec, hyps)
+	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
+	if err != nil {
+		return err
+	}
+	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
+	docxBytes, err := export.ToDOCX(run.ProblemSpec, hyps, sources, run.KnowledgeGaps)
 	if err != nil {
 		return errs.NewInternalError("render docx: " + err.Error())
 	}
@@ -244,11 +287,58 @@ func (h *Handler) GetRunReportCSV(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	csvBytes, err := export.ToCSV(hyps)
+	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
+	if err != nil {
+		return err
+	}
+	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
+	csvBytes, err := export.ToCSV(hyps, sources)
 	if err != nil {
 		return errs.NewInternalError("render csv: " + err.Error())
 	}
 	c.Set(fiber.HeaderContentType, "text/csv; charset=utf-8")
 	c.Set(fiber.HeaderContentDisposition, `attachment; filename="report.csv"`)
 	return c.Send(csvBytes)
+}
+
+// GetRunReportJira отдаёт гипотезы прогона как задачи на верификацию в
+// формате Jira Cloud bulk-import (issue/bulk payload) — файл для ручного/
+// автоматического импорта, готовый уйти тем же телом прямым POST-запросом,
+// если появится живой API-ключ инстанса.
+// @Summary      Экспорт гипотез как задач в Jira-совместимом JSON
+// @Tags         runs
+// @Produce      json
+// @Param        runId       path   string  true   "UUID прогона"
+// @Param        projectKey  query  string  true   "Ключ проекта Jira, напр. HYP"
+// @Param        issueType   query  string  false  "Тип задачи"  default(Task)
+// @Success      200  {file}    file
+// @Failure      400  {object}  errs.Error
+// @Failure      404  {object}  errs.Error
+// @Failure      500  {object}  errs.Error
+// @Router       /runs/{runId}/report.jira.json [get]
+func (h *Handler) GetRunReportJira(c *fiber.Ctx) error {
+	if _, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId")); err != nil {
+		return err
+	}
+	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
+	if err != nil {
+		return err
+	}
+	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
+
+	projectKey := c.Query("projectKey")
+	if projectKey == "" {
+		return errs.NewBadRequestError("projectKey query param is required")
+	}
+	jiraBytes, err := export.ToJiraJSON(hyps, sources, projectKey, c.Query("issueType"))
+	if err != nil {
+		return errs.NewInternalError("render jira export: " + err.Error())
+	}
+	c.Set(fiber.HeaderContentType, "application/json")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="report.jira.json"`)
+	return c.Send(jiraBytes)
 }

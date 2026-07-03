@@ -35,6 +35,18 @@ type IngestChunk struct {
 }
 
 func (c *PyworkerClient) Ingest(ctx context.Context, filename string, data []byte) ([]IngestChunk, error) {
+	return c.ingest(ctx, "/ingest", filename, data)
+}
+
+// IngestArticle отправляет PDF в /ingest-article — GROBID (структура научной
+// статьи: заголовок/авторы/abstract/секции) + best-effort обогащение
+// Semantic Scholar, вместо Docling-конвертации общего назначения. Требует
+// docker-compose.ingestion.yml с сервисом grobid (не часть runtime-сборки).
+func (c *PyworkerClient) IngestArticle(ctx context.Context, filename string, data []byte) ([]IngestChunk, error) {
+	return c.ingest(ctx, "/ingest-article", filename, data)
+}
+
+func (c *PyworkerClient) ingest(ctx context.Context, path, filename string, data []byte) ([]IngestChunk, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	fw, err := w.CreateFormFile("file", filename)
@@ -48,7 +60,7 @@ func (c *PyworkerClient) Ingest(ctx context.Context, filename string, data []byt
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/ingest", &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -61,13 +73,13 @@ func (c *PyworkerClient) Ingest(ctx context.Context, filename string, data []byt
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("pyworker ingest: status %d: %s", resp.StatusCode, string(raw))
+		return nil, fmt.Errorf("pyworker %s: status %d: %s", path, resp.StatusCode, string(raw))
 	}
 	var out struct {
 		Chunks []IngestChunk `json:"chunks"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("pyworker ingest: decode: %w", err)
+		return nil, fmt.Errorf("pyworker %s: decode: %w", path, err)
 	}
 	return out.Chunks, nil
 }

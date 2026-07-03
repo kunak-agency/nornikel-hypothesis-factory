@@ -62,7 +62,7 @@
                     {
                         "type": "string",
                         "default": "report",
-                        "description": "book | regulation | scheme | historical_case | report",
+                        "description": "book | regulation | scheme | historical_case | report | article | patent (article = GROBID + Semantic Scholar; patent — через обычный Docling-путь, structured-парсинг формулы изобретения не делаем — используйте authors/year для инвентора/даты подачи)",
                         "name": "sourceType",
                         "in": "formData"
                     },
@@ -78,6 +78,24 @@
                         "default": "ru",
                         "description": "Язык",
                         "name": "language",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Авторы (через запятую), если известны",
+                        "name": "authors",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Год издания/публикации, если известен",
+                        "name": "year",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Издание/версия, если известно",
+                        "name": "edition",
                         "in": "formData"
                     }
                 ],
@@ -317,6 +335,32 @@
                         "description": "Свободный текст с доп. контекстом (цель, оборудование, ограничения)",
                         "name": "rawText",
                         "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "default": "flotation",
+                        "description": "База знаний какого домена используется",
+                        "name": "domain",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "default": "ru",
+                        "description": "Язык гипотез: ru|en|zh",
+                        "name": "language",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON domain.RankingWeights — режим экспертной настройки весов",
+                        "name": "rankingWeights",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON-массив строк — направления, которые генерация должна обходить",
+                        "name": "excludedTopics",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -496,6 +540,66 @@
                 }
             }
         },
+        "/runs/{runId}/report.jira.json": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Экспорт гипотез как задач в Jira-совместимом JSON",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ключ проекта Jira, напр. HYP",
+                        "name": "projectKey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "Task",
+                        "description": "Тип задачи",
+                        "name": "issueType",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/runs/{runId}/report.md": {
             "get": {
                 "produces": [
@@ -587,6 +691,26 @@
                 }
             }
         },
+        "domain.RankingWeights": {
+            "type": "object",
+            "properties": {
+                "evidence": {
+                    "type": "number"
+                },
+                "feasibility": {
+                    "type": "number"
+                },
+                "impact": {
+                    "type": "number"
+                },
+                "novelty": {
+                    "type": "number"
+                },
+                "risk": {
+                    "type": "number"
+                }
+            }
+        },
         "domain.Scores": {
             "type": "object",
             "properties": {
@@ -616,6 +740,12 @@
         "domain.VerificationStep": {
             "type": "object",
             "properties": {
+                "estimatedCost": {
+                    "type": "string"
+                },
+                "estimatedDuration": {
+                    "type": "string"
+                },
                 "resource": {
                     "type": "string"
                 },
@@ -701,6 +831,36 @@
                 "rawText"
             ],
             "properties": {
+                "domain": {
+                    "description": "Domain — база знаний какого домена используется (по умолчанию flotation).",
+                    "type": "string",
+                    "example": "flotation"
+                },
+                "excludedTopics": {
+                    "description": "ExcludedTopics — направления/подходы, которые генерация должна\nобходить (например, уже испробованные и отклонённые ранее).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "language": {
+                    "description": "Language — язык гипотез/обоснований в ответе (по умолчанию ru).",
+                    "type": "string",
+                    "enum": [
+                        "ru",
+                        "en",
+                        "zh"
+                    ],
+                    "example": "ru"
+                },
+                "rankingWeights": {
+                    "description": "RankingWeights — режим экспертной настройки: переопределение весов\nкритериев ранжирования (нетронутые поля = дефолт).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.RankingWeights"
+                        }
+                    ]
+                },
                 "rawInput": {
                     "type": "object",
                     "additionalProperties": {}
@@ -988,6 +1148,9 @@
                 "createdAt": {
                     "type": "string"
                 },
+                "domain": {
+                    "type": "string"
+                },
                 "error": {
                     "type": "string"
                 },
@@ -998,6 +1161,16 @@
                     }
                 },
                 "id": {
+                    "type": "string"
+                },
+                "knowledgeGaps": {
+                    "description": "KnowledgeGaps — металлы/точки потерь из ProblemSpec, слабо покрытые\nизвлечёнными claims (детерминированная проверка, не LLM-догадка).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "language": {
                     "type": "string"
                 },
                 "problemSpec": {

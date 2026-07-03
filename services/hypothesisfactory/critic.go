@@ -39,7 +39,12 @@ var criticLenses = []struct {
 	},
 }
 
-const criticResponseFormat = `
+func criticResponseFormat(language string) string {
+	langName := genLanguageNames[language]
+	if langName == "" {
+		langName = genLanguageNames["ru"]
+	}
+	return fmt.Sprintf(`
 
 Оцени гипотезу и верни ТОЛЬКО JSON-объект по схеме ниже (все числовые оценки — целые от 0 до 10):
 {
@@ -47,10 +52,11 @@ const criticResponseFormat = `
   "impact": <0-10>,
   "novelty": <0-10>,
   "risk_penalty": <0-10>,
-  "critic_notes": "1-2 предложения: главное слабое место или почему гипотеза выдерживает критику с твоей точки зрения"
+  "critic_notes": "1-2 предложения на %s языке: главное слабое место или почему гипотеза выдерживает критику с твоей точки зрения"
 }
 Пояснение к полям (не включай его в ответ): risk_penalty — чем выше значение, тем больше риск.
-Первый символ ответа — {, последний — }. Никакого текста до/после и никаких markdown-ограждений (` + "```" + ` и слова json), никаких комментариев внутри JSON.`
+Первый символ ответа — {, последний — }. Никакого текста до/после и никаких markdown-ограждений (`+"```"+` и слова json), никаких комментариев внутри JSON.`, langName)
+}
 
 type criticVerdict struct {
 	Feasibility float64 `json:"feasibility"`
@@ -65,8 +71,10 @@ type criticVerdict struct {
 // последовательно), считает детерминированный evidence_strength из
 // confidence/числа claims (не отдан на откуп LLM) и ранжирует по прозрачной
 // формуле.
-func critique(ctx context.Context, client externalApi.LLMClient, spec domain.ProblemSpec, claimByID map[string]domain.Claim, hyps []domain.Hypothesis) []domain.Hypothesis {
+func critique(ctx context.Context, client externalApi.LLMClient, spec domain.ProblemSpec, claimByID map[string]domain.Claim,
+	hyps []domain.Hypothesis, language string, weights domain.RankingWeights) []domain.Hypothesis {
 	specJSON, _ := json.Marshal(spec)
+	responseFormat := criticResponseFormat(language)
 
 	allVerdicts := make([][]*criticVerdict, len(hyps))
 	var wg sync.WaitGroup
@@ -88,7 +96,7 @@ func critique(ctx context.Context, client externalApi.LLMClient, spec domain.Pro
 				defer wg.Done()
 				resp, err := client.Complete(ctx, externalApi.CompleteRequest{
 					Messages: []externalApi.Message{
-						{Role: "system", Content: lens.prompt + criticResponseFormat},
+						{Role: "system", Content: lens.prompt + responseFormat},
 						{Role: "user", Content: userMsg},
 					},
 					Temperature: 0.2,
@@ -109,7 +117,7 @@ func critique(ctx context.Context, client externalApi.LLMClient, spec domain.Pro
 	for i := range hyps {
 		h := &hyps[i]
 		h.Scores, h.CriticNotes = aggregateVerdicts(allVerdicts[i], h.Scores.EvidenceStrength)
-		h.Scores.Total = totalScore(h.Scores)
+		h.Scores.Total = totalScore(h.Scores, weights)
 	}
 
 	sort.SliceStable(hyps, func(i, j int) bool { return hyps[i].Scores.Total > hyps[j].Scores.Total })
@@ -186,19 +194,34 @@ func evidenceStrength(refs []uuid.UUID, claimByID map[string]domain.Claim) float
 	return sum
 }
 
-func totalScore(s domain.Scores) float64 {
-	// Веса отдают приоритет проверяемости/эффекту над сырой новизной — кейс
-	// сильнее упирает на лабораторно проверяемые, бизнес-релевантные
-	// гипотезы, чем на "вау-радикальность".
-	const (
-		wEvidence = 0.25
-		wFeasible = 0.20
-		wImpact   = 0.25
-		wNovelty  = 0.15
-		wRisk     = 0.15
-	)
+// defaultRankingWeights отдают приоритет проверяемости/эффекту над сырой
+// новизной — кейс сильнее упирает на лабораторно проверяемые,
+// бизнес-релевантные гипотезы, чем на "вау-радикальность". Переопределяются
+// per-run через domain.RankingWeights ("режим экспертной настройки" из
+// доп. пожеланий кейса) — незаполненные (nil) поля остаются дефолтными.
+const (
+	defaultWEvidence = 0.25
+	defaultWFeasible = 0.20
+	defaultWImpact   = 0.25
+	defaultWNovelty  = 0.15
+	defaultWRisk     = 0.15
+)
+
+func totalScore(s domain.Scores, w domain.RankingWeights) float64 {
+	wEvidence := orDefault(w.Evidence, defaultWEvidence)
+	wFeasible := orDefault(w.Feasibility, defaultWFeasible)
+	wImpact := orDefault(w.Impact, defaultWImpact)
+	wNovelty := orDefault(w.Novelty, defaultWNovelty)
+	wRisk := orDefault(w.Risk, defaultWRisk)
 	return wEvidence*s.EvidenceStrength + wFeasible*s.Feasibility + wImpact*s.Impact +
 		wNovelty*s.Novelty - wRisk*s.RiskPenalty
+}
+
+func orDefault(v *float64, def float64) float64 {
+	if v == nil {
+		return def
+	}
+	return *v
 }
 
 func confidenceFromScores(s domain.Scores) float64 {

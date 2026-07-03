@@ -28,10 +28,17 @@ type Scores struct {
 	Total            float64 `json:"total"`
 }
 
+// VerificationStep — один шаг дорожной карты проверки гипотезы.
+// EstimatedDuration/EstimatedCost — качественная/количественная оценка
+// ("1-2 недели", "~200 т.р. на реагенты"), не строгое число: LLM оценивает
+// по контексту, не считает по формуле — но этого достаточно, чтобы
+// фронтенд построил визуальный таймлайн/бюджет без выдумывания полей.
 type VerificationStep struct {
-	Step        string `json:"step"`
-	Resource    string `json:"resource"`
-	SuccessCrit string `json:"successCriterion"`
+	Step              string `json:"step"`
+	Resource          string `json:"resource"`
+	SuccessCrit       string `json:"successCriterion"`
+	EstimatedDuration string `json:"estimatedDuration,omitempty"`
+	EstimatedCost     string `json:"estimatedCost,omitempty"`
 }
 
 // Hypothesis — одна сгенерированная гипотеза, привязанная к конкретным
