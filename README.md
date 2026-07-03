@@ -11,19 +11,35 @@ Evidence-Backed Hypothesis Factory для Task 1 (Норникель AI Science 
 ```
 ProblemSpec parser → Hybrid Retrieval (FTS + pgvector) → Reranker
     → Claim Extraction (LLM, JSON) → Hypothesis Generator (LLM, JSON, 5-10 кандидатов)
-    → Critic / Deterministic Ranker → Report (JSON / Markdown)
+    → 3-Judge Critic Ensemble / Deterministic Ranker → Report (JSON / Markdown)
 ```
 
-- **Go** (`cmd/api`, `internal/*`) — orchestrator/API, вся бизнес-логика пайплайна, БД, ранжирование.
-- **Python worker** (`services/pyworker`) — Docling (ingestion PDF/DOCX/XLSX/изображений в
-  семантические чанки: секции/таблицы, а не куски по 512 токенов) + BGE-M3 (эмбеддинги,
-  мультиязычные) + bge-reranker-v2-m3 (реранкинг).
-- **PostgreSQL + pgvector** — единое хранилище: `documents` → `chunks` (dense+FTS индексы) →
-  `claims` (claim-level evidence: объект/действие/эффект/цитата/confidence) → `hypotheses`.
-- **LLM** — `internal/llm.Client` — pluggable-интерфейс. Сегодня реализован Yandex GPT
-  (Foundation Models API, ключ команды уже подключён и проверен). Для прод-конфигурации
-  достаточно добавить второй `Client` поверх OpenAI-совместимого self-hosted эндпоинта
-  (vLLM/Ollama + Qwen3) — остальной код пайплайна не меняется.
+Стек и раскладка кода намеренно повторяют другие Go-проекты команды (geowatch/api):
+**Fiber v2 + gofiber/swagger + GORM + PostgreSQL/pgvector**, плоская раскладка
+`domain/` → `repositories/` → `services/` → `handlers/` → `in/`/`out/` DTO, типизированные
+ошибки в `pkg/errs` (хендлеры возвращают `error`, единая точка маппинга в HTTP-статус).
+
+- **`domain/`** — GORM-модели (Document, Chunk, Claim, HypothesisRun, Hypothesis, Feedback).
+- **`repositories/`** — доступ к БД; `MigrateDB()` — гибрид GORM AutoMigrate + raw SQL для
+  того, что GORM-теги не выражают (`CREATE EXTENSION vector`, generated tsvector-колонка,
+  HNSW-индекс, `ON DELETE CASCADE` без явных GORM-связей).
+- **`services/hypothesisfactory/`** — сам пайплайн (ProblemSpec → retrieval → claims →
+  hypotheses → critic → report). `POST /v1/runs` **асинхронный**: синхронно выполняется только
+  быстрый парсинг ProblemSpec (~1-2с), возвращает `202` с `id`+`status=pending` сразу, а
+  retrieval→claims→hypotheses→critique (~45-90с) уходит в фон — клиент поллит
+  `GET /v1/runs/{runId}` по полю `status` (`pending→retrieving→extracting→generating→
+  critiquing→done|failed`). Раньше `POST /runs` блокировал HTTP-запрос на всё время
+  прогона — для веб-интерфейса это было неприемлемо.
+- **`services/knowledgebase/`** — ingestion (Docling + BGE-M3 через pyworker sidecar).
+- **`externalApi/`** — внешние интеграции: `LLMClient` (pluggable-интерфейс, сегодня
+  `YandexClient` — Foundation Models API; прод-конфигурация может подменить на
+  self-hosted OpenAI-совместимый эндпоинт vLLM/Ollama+Qwen3 без изменения пайплайна) и
+  `PyworkerClient` (Docling ingestion + BGE-M3 эмбеддинги/реранкинг).
+- **`handlers/`** — Fiber-хендлеры со Swagger-аннотациями (`swag init` генерирует `docs/`);
+  UI на `/swagger/index.html`.
+- **`in/`/`out/`** — DTO запросов/ответов, camelCase JSON. Домен-модели, где это дешевле
+  (`domain.ProblemSpec`), держат snake_case-теги под контракт с LLM-промптом, а не под API —
+  `out.ProblemSpecResponse` явно конвертирует для фронта.
 
 Каждая гипотеза обязана ссылаться на конкретные `claim_id` из evidence-pack — это и есть
 ответ на требование интерпретируемости из кейса: цепочка источник → claim → гипотеза видна
@@ -45,19 +61,22 @@ docker compose up --build
 ./scripts/seed_corpus.sh
 ```
 
-Запустить генерацию гипотез:
+Swagger UI: `http://localhost:8080/swagger/index.html` — полная спецификация всех эндпоинтов.
+
+Запустить генерацию гипотез (эндпоинт асинхронный — `202` с `id` сразу, дальше поллить статус):
 
 ```bash
-curl -sS -X POST localhost:8080/runs -H 'Content-Type: application/json' -d '{
-  "raw_text": "Фабрика: КГМК. Породные хвосты 5824591 СМТ. Ni 0.178% (10392 т), Cu 0.0726% (4230 т). Основные потери Ni — в закрытых сростках Pnt/Cp во фракции +71 мкм (77.9% потерь). Схема: шаровые мельницы, гидроциклоны (насадки 12 мм), классификаторы, флотомашины. Ограничение: без остановки текущей схемы."
+curl -sS -X POST localhost:8080/v1/runs -H 'Content-Type: application/json' -d '{
+  "rawText": "Фабрика: КГМК. Породные хвосты 5824591 СМТ. Ni 0.178% (10392 т), Cu 0.0726% (4230 т). Основные потери Ni — в закрытых сростках Pnt/Cp во фракции +71 мкм (77.9% потерь). Схема: шаровые мельницы, гидроциклоны (насадки 12 мм), классификаторы, флотомашины. Ограничение: без остановки текущей схемы."
 }' | python3 -m json.tool
+# {"id": "...", "status": "pending", "problemSpec": {...}}
+
+curl -sS localhost:8080/v1/runs/<id>   # поллить до status=done|failed
+curl -sS localhost:8080/v1/runs/<id>/report.md
 ```
 
-Ответ содержит `run_id`; отчёт в Markdown:
-
-```bash
-curl -sS localhost:8080/runs/<run_id>/report.md
-```
+Остальные эндпоинты: `GET /v1/documents` (база знаний), `DELETE /v1/documents/{id}`,
+`GET /v1/runs` (история, пагинация), `POST /v1/hypotheses/{id}/feedback` (оценка эксперта).
 
 ## Что уже проверено вживую (полный докер-стек, реальный Yandex GPT, реальная книга)
 
@@ -73,6 +92,10 @@ curl -sS localhost:8080/runs/<run_id>/report.md
   прозрачное ранжирование. Полностью укладывается в требование кейса «минуты, не часы».
 - Grounding-проверка (`isGrounded`) реально отфильтровывает negrounded claims — из кандидатов
   после LLM-извлечения выжило 5 claims с проверенными дословными цитатами.
+- **После миграции на Fiber+GORM (см. ниже) пайплайн перепроверен на новом стеке**: волюм БД
+  пересоздан, вся база знаний (24 документа, ~3730 chunks) перезалита через `POST /v1/documents`,
+  `POST /v1/runs` подтверждённо асинхронный (`202` мгновенно, поллинг `GET /v1/runs/{id}` по
+  `status` до `done`), 5 гипотез сгенерированы за тот же порядок времени.
 - **Регламенты и схемы флотации доингестированы** (см. отдельную секцию ниже про OCR/vision) —
   список оборудования (мельницы МШРГУ/МШЦ/МШР, гидроциклоны ГЦ-660, классификаторы 1КСП24М/
   2КСН24, флотомашины ФПМ-16-4К), 12 схем цепей аппаратов и реагентных режимов, включая полную
