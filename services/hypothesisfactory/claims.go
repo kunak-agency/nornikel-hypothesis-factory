@@ -208,10 +208,19 @@ func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, c
 	return claims
 }
 
+// groundingOverlapThreshold — порог word-overlap для isGrounded. Раньше был
+// 0.7: отбрасывал не только галлюцинации, но и настоящие цитаты, которые
+// LLM слегка перефразировала (склеила два предложения, поправила пунктуацию,
+// зацепила letter-spacing-фикс) — то есть резал не только явную дичь, а
+// заодно и правдоподобные пограничные случаи. 0.6 — компромисс: цитата, где
+// большинство слов реально из источника, считается заземлённой; ниже
+// половины слов — это уже больше выдумано, чем процитировано, отбрасываем.
+const groundingOverlapThreshold = 0.6
+
 // isGrounded проверяет, что цитата реально прослеживается до исходного
-// чанка: точное вхождение после нормализации, либо word-overlap >= 0.7 (чтобы
-// мелкая нормализация пробелов/пунктуации моделью не отбрасывала настоящую
-// цитату). Ниже порога цитата считается недостоверной/галлюцинированной.
+// чанка: точное вхождение после нормализации, либо word-overlap >=
+// groundingOverlapThreshold. Ниже порога цитата считается недостоверной/
+// галлюцинированной.
 func isGrounded(quote, sourceContent string) bool {
 	quote = strings.TrimSpace(quote)
 	if quote == "" {
@@ -222,7 +231,7 @@ func isGrounded(quote, sourceContent string) bool {
 	if strings.Contains(normSource, normQuote) {
 		return true
 	}
-	return wordOverlapRatio(normQuote, normSource) >= 0.7
+	return wordOverlapRatio(normQuote, normSource) >= groundingOverlapThreshold
 }
 
 func normalizeForMatch(s string) string {
