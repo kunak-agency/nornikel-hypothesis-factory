@@ -9,6 +9,7 @@ import (
 
 	"hypothesis-factory/domain"
 	"hypothesis-factory/externalApi"
+	"hypothesis-factory/pkg/logger"
 	"hypothesis-factory/repositories"
 
 	"github.com/google/uuid"
@@ -217,6 +218,8 @@ func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, c
 		// правдоподобный, но никогда не встречавшийся в источнике текст;
 		// валидный JSON этого не ловит — нужна проверка вне LLM-вызова.
 		if !isGrounded(r.Quote, parentContent) {
+			logger.LogWarningCtx(ctx, "claim rejected by grounding (doc=%q subject=%q): quote=%q",
+				chunk.DocumentTitle, r.Subject, r.Quote)
 			continue
 		}
 		claims = append(claims, domain.Claim{

@@ -15,24 +15,57 @@ import (
 // retrievalFacet — фасет запроса + минимальная гарантированная "квота
 // анти-голодания" (не доля topK — см. ниже, почему это разные вещи).
 type retrievalFacet struct {
-	suffix   string // "" = базовый запрос как есть
-	minFloor int    // сколько слотов гарантированы фасету, даже если его скор ниже других
+	// topic — САМОСТОЯТЕЛЬНЫЙ текст запроса фасета ("" = базовый запрос из
+	// ProblemSpec). Не суффикс к базовому: склейка base+topic отравляет и
+	// эмбеддинг, и реранк — длинная минералогическая база доминирует, и
+	// реранкер честно топит специализированный контент (проверено напрямую:
+	// с base+suffix глава Поварова "3.4 Диаметр песковой насадки" не
+	// попадала в топ вообще, со standalone topic — топ-1 с score 0.978).
+	topic string
+	// useEquipment — добавить в запрос фасета реальное оборудование фабрики
+	// из spec.AvailableEquipment: делает фасет конкретным для этой площадки
+	// (гидроциклон какой модели, какие мельницы), а не абстрактной темой.
+	useEquipment bool
+	minFloor     int // сколько слотов гарантированы фасету, даже если его скор ниже других
 }
 
 // retrievalFacetsByDomain — детерминированная декомпозиция запроса на
-// РАЗНЫЕ подтемы (не LLM-перефразы одного запроса), реранжируемые каждая
-// своим запросом: единый реранкинг против общего минералогического запроса
-// топит контент про оборудование ниже topK, даже если он был найден верным
-// facet-запросом. minFloor — анти-голодание (гарантированный минимум слотов
-// фасету), не процентная квота: остаток topK — открытая конкуренция по
-// сырому (сигмоид-калиброванному, потому сравнимому между фасетами)
-// реранкер-скору. Домен без записи в реестре — см. facetsForDomain.
+// РАЗНЫЕ подтемы (не LLM-перефразы одного запроса), каждая ищется и
+// реранжируется своим самостоятельным запросом. minFloor — анти-голодание
+// (гарантированный минимум слотов фасету), не процентная квота: остаток
+// topK — открытая конкуренция по сырому (сигмоид-калиброванному, потому
+// сравнимому между фасетами) реранкер-скору. Домен без записи в реестре —
+// см. facetsForDomain.
 var retrievalFacetsByDomain = map[string][]retrievalFacet{
 	"flotation": {
-		{suffix: "", minFloor: 3},
-		{suffix: "оборудование и схема классификации: гидроциклоны, диаметр насадок, классификаторы, грохота, магнитная сепарация", minFloor: 2},
-		{suffix: "измельчение: степень измельчения, крупность помола, футеровка мельниц, цепь измельчения", minFloor: 2},
+		{topic: "", minFloor: 3},
+		{topic: "оборудование и классификация: гидроциклоны, песковая насадка, влияние диаметра насадки на крупность слива и потери металла, спиральные классификаторы, грохота, магнитная сепарация", useEquipment: true, minFloor: 2},
+		{topic: "измельчение: степень измельчения, крупность помола, раскрытие сростков минералов, футеровка мельниц, замкнутый цикл измельчения с классификацией", useEquipment: true, minFloor: 2},
 	},
+}
+
+// buildFacetQuery — самостоятельный текст запроса фасета: тема + (для
+// equipment-фасетов) реальное оборудование фабрики из ProblemSpec. Из
+// записей оборудования берётся только модель (текст до скобки с позицией в
+// схеме): "ГЦ-660 (Линии 4-2, 5-3, поз. 4-2-ГЦ-660...)" тянет в эмбеддинг
+// запроса номера линий/позиций — шум, разбавляющий тематическую близость
+// к литературе про сам аппарат.
+func buildFacetQuery(baseQuery string, facet retrievalFacet, spec domain.ProblemSpec) string {
+	if facet.topic == "" {
+		return baseQuery
+	}
+	q := facet.topic
+	if facet.useEquipment && len(spec.AvailableEquipment) > 0 {
+		models := make([]string, 0, len(spec.AvailableEquipment))
+		for _, e := range spec.AvailableEquipment {
+			if i := strings.Index(e, " ("); i > 0 {
+				e = e[:i]
+			}
+			models = append(models, e)
+		}
+		q += ". Оборудование фабрики: " + strings.Join(models, ", ")
+	}
+	return q
 }
 
 // facetsForDomain возвращает таксономию фасетов для домена; без записи в
@@ -42,7 +75,7 @@ func facetsForDomain(domainFilter string, topK int) []retrievalFacet {
 	if facets, ok := retrievalFacetsByDomain[domainFilter]; ok {
 		return facets
 	}
-	return []retrievalFacet{{suffix: "", minFloor: topK}}
+	return []retrievalFacet{{topic: "", minFloor: topK}}
 }
 
 // retrieve — facet-декомпозированный гибридный поиск: каждый фасет параллельно
@@ -63,10 +96,7 @@ func retrieve(ctx context.Context, chunks *repositories.ChunkRepo, pyworker *ext
 		wg.Add(1)
 		go func(i int, facet retrievalFacet) {
 			defer wg.Done()
-			q := baseQuery
-			if facet.suffix != "" {
-				q = baseQuery + ". " + facet.suffix
-			}
+			q := buildFacetQuery(baseQuery, facet, spec)
 			vec, err := pyworker.EmbedOne(ctx, q)
 			if err != nil {
 				results[i] = facetResult{err: fmt.Errorf("embed facet query: %w", err)}

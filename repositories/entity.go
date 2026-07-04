@@ -73,12 +73,15 @@ func (r *EntityRepo) GetFeedbackStats(ctx context.Context, entityIDs []uuid.UUID
 	if len(entityIDs) == 0 {
 		return nil, nil
 	}
+	// IN ?, не = ANY(?): GORM разворачивает []uuid.UUID в перечисление
+	// значений через запятую, что синтаксически валидно для IN, но не для
+	// ANY (тому нужен массив) — с ANY запрос падал с syntax error.
 	var out []FeedbackStats
 	err := r.db.WithContext(ctx).Raw(`
 		WITH claim_entities AS (
-			SELECT id AS claim_id, subject_entity_id AS entity_id FROM claims WHERE subject_entity_id = ANY(?)
+			SELECT id AS claim_id, subject_entity_id AS entity_id FROM claims WHERE subject_entity_id IN ?
 			UNION ALL
-			SELECT id AS claim_id, metric_entity_id AS entity_id FROM claims WHERE metric_entity_id = ANY(?)
+			SELECT id AS claim_id, metric_entity_id AS entity_id FROM claims WHERE metric_entity_id IN ?
 		)
 		SELECT ce.entity_id, e.canonical_name,
 		       count(*) FILTER (WHERE f.verdict = 'confirmed') AS confirmed,
