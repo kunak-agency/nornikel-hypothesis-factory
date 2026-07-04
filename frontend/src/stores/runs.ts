@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-import { runsApi } from '@/api/runs'
+import { runsApi, type ExcelRunOptions } from '@/api/runs'
 import type { CreateRunRequest, Run } from '@/api/types'
 
 // Терминальные статусы прогона — на них поллинг останавливается.
@@ -15,11 +15,11 @@ export const useRunsStore = defineStore('runs', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  async function fetchRuns(page = 1, perPage = 30, status?: string) {
+  async function fetchRuns(page = 1, perPage = 30) {
     loading.value = true
     error.value = null
     try {
-      const resp = await runsApi.list(page, perPage, status)
+      const resp = await runsApi.list(page, perPage)
       runs.value = resp.items ?? []
       total.value = resp.total ?? runs.value.length
     } catch (e) {
@@ -47,8 +47,12 @@ export const useRunsStore = defineStore('runs', () => {
     return run
   }
 
-  async function createRunFromExcel(file: File, rawText: string): Promise<Run> {
-    const run = await runsApi.createFromExcel(file, rawText)
+  async function createRunFromExcel(
+    file: File,
+    rawText: string,
+    opts?: ExcelRunOptions,
+  ): Promise<Run> {
+    const run = await runsApi.createFromExcel(file, rawText, opts)
     current.value = run
     return run
   }

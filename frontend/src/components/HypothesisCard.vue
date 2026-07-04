@@ -189,14 +189,14 @@ async function sendFeedback() {
       </div>
     </div>
 
-    <!-- Источники (evidenceRefs — голые UUID, /claims недоступен) -->
+    <!-- Источники (evidenceRefs → claims; дословные цитаты — во вкладке Evidence) -->
     <div
       v-if="hypothesis.evidenceRefs?.length"
       class="mt-3 flex items-center gap-1.5 text-[12px] text-faint"
-      title="Полные цитаты недоступны: эндпоинт /claims не реализован"
+      title="Дословные цитаты — во вкладке Evidence"
     >
       <Icon icon="lucide:link" class="size-3.5" />
-      Опирается на {{ hypothesis.evidenceRefs.length }} факт(ов) из базы знаний
+      Опирается на {{ hypothesis.evidenceRefs.length }} факт(ов) — см. вкладку Evidence
     </div>
 
     <div class="my-4 h-px bg-bd"></div>

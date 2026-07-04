@@ -21,37 +21,34 @@ let cancelled = false
 const rawText = ref('')
 const excelFile = ref<File | null>(null)
 const advOpen = ref(false)
-const constraints = ref<string[]>([])
 const excludedTopics = ref<string[]>([])
-const constraintInput = ref('')
 const excludeInput = ref('')
 
+// Ключи соответствуют domain.RankingWeights в Swagger (evidence/risk).
 const weights = reactive({
-  evidenceStrength: 60,
+  evidence: 60,
   feasibility: 60,
   impact: 80,
   novelty: 70,
-  riskPenalty: 50,
+  risk: 50,
 })
 const WEIGHT_LABELS: Record<keyof typeof weights, string> = {
-  evidenceStrength: 'Доказательность',
+  evidence: 'Доказательность',
   feasibility: 'Реализуемость',
   impact: 'Эффект',
   novelty: 'Новизна',
-  riskPenalty: 'Штраф за риск',
+  risk: 'Штраф за риск',
 }
 
 const canSubmit = computed(() => rawText.value.trim().length >= 20 && !busy.value)
 
-function addChip(list: 'c' | 'e') {
-  const input = list === 'c' ? constraintInput : excludeInput
-  const target = list === 'c' ? constraints : excludedTopics
-  const v = input.value.trim()
-  if (v && !target.value.includes(v)) target.value.push(v)
-  input.value = ''
+function addExclude() {
+  const v = excludeInput.value.trim()
+  if (v && !excludedTopics.value.includes(v)) excludedTopics.value.push(v)
+  excludeInput.value = ''
 }
-function removeChip(list: 'c' | 'e', i: number) {
-  ;(list === 'c' ? constraints : excludedTopics).value.splice(i, 1)
+function removeExclude(i: number) {
+  excludedTopics.value.splice(i, 1)
 }
 
 function onExcel(e: Event) {
@@ -81,23 +78,30 @@ async function generate() {
   busy.value = true
   cancelled = false
   try {
+    const rankingWeights = {
+      evidence: weights.evidence / 100,
+      feasibility: weights.feasibility / 100,
+      impact: weights.impact / 100,
+      novelty: weights.novelty / 100,
+      risk: weights.risk / 100,
+    }
+    const topics = excludedTopics.value.length ? excludedTopics.value : undefined
+
     let run: Run
     if (excelFile.value) {
-      run = await store.createRunFromExcel(excelFile.value, rawText.value.trim())
+      // На Excel-пути числа берутся из файла; веса и исключения передаём отдельно.
+      run = await store.createRunFromExcel(excelFile.value, rawText.value.trim(), {
+        language: 'ru',
+        rankingWeights,
+        excludedTopics: topics,
+      })
     } else {
       const body: CreateRunRequest = {
         rawText: rawText.value.trim(),
         language: 'ru',
-        constraints: constraints.value.length ? constraints.value : undefined,
-        excludedTopics: excludedTopics.value.length ? excludedTopics.value : undefined,
-        rankingWeights: {
-          evidenceStrength: weights.evidenceStrength / 100,
-          feasibility: weights.feasibility / 100,
-          impact: weights.impact / 100,
-          novelty: weights.novelty / 100,
-          riskPenalty: weights.riskPenalty / 100,
-        },
-      } as CreateRunRequest
+        excludedTopics: topics,
+        rankingWeights,
+      }
       run = await store.createRun(body)
     }
     activeRun.value = run
@@ -231,26 +235,7 @@ onBeforeUnmount(() => {
         </button>
 
         <div v-if="advOpen" class="pt-3">
-          <!-- Ограничения -->
-          <div class="lbl mb-2">Ограничения</div>
-          <div class="mb-2 flex flex-wrap gap-1.5">
-            <span
-              v-for="(c, i) in constraints"
-              :key="i"
-              class="inline-flex items-center gap-1 rounded-full bg-accentbg px-2.5 py-1 text-[11.5px] text-accent"
-            >
-              {{ c }}
-              <button @click="removeChip('c', i)"><Icon icon="lucide:x" class="size-3" /></button>
-            </span>
-          </div>
-          <input
-            v-model="constraintInput"
-            class="inp mb-4 text-[13px]"
-            placeholder="напр. не менять реагентный режим — Enter"
-            @keydown.enter.prevent="addChip('c')"
-          />
-
-          <!-- Исключения -->
+          <!-- Исключаемые темы (excludedTopics — реальное поле API) -->
           <div class="lbl mb-2">Исключаемые темы</div>
           <div class="mb-2 flex flex-wrap gap-1.5">
             <span
@@ -259,14 +244,14 @@ onBeforeUnmount(() => {
               class="inline-flex items-center gap-1 rounded-full border border-bds px-2.5 py-1 text-[11.5px] text-sec"
             >
               {{ c }}
-              <button @click="removeChip('e', i)"><Icon icon="lucide:x" class="size-3" /></button>
+              <button @click="removeExclude(i)"><Icon icon="lucide:x" class="size-3" /></button>
             </span>
           </div>
           <input
             v-model="excludeInput"
             class="inp mb-4 text-[13px]"
             placeholder="тема для исключения — Enter"
-            @keydown.enter.prevent="addChip('e')"
+            @keydown.enter.prevent="addExclude"
           />
 
           <!-- Веса -->
@@ -322,7 +307,11 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- report -->
-        <RunReport v-else-if="phase === 'report' && activeRun" :run="activeRun" />
+        <RunReport
+          v-else-if="phase === 'report' && activeRun"
+          :run="activeRun"
+          @reranked="activeRun = $event"
+        />
       </div>
     </div>
   </section>

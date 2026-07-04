@@ -79,12 +79,14 @@ export interface RunListResponse {
   perPage: number
 }
 
+// Соответствует domain.RankingWeights в Swagger: поля evidence/risk
+// (НЕ evidenceStrength/riskPenalty — иначе бэкенд молча игнорирует эти веса).
 export interface RankingWeights {
-  evidenceStrength?: number
+  evidence?: number
   feasibility?: number
   impact?: number
   novelty?: number
-  riskPenalty?: number
+  risk?: number
 }
 
 export interface CreateRunRequest {
@@ -126,4 +128,72 @@ export interface FeedbackResponse {
   comment: string
   reviewer: string
   createdAt: string
+}
+
+// --- Репутация сущностей (GET /v1/entities/reputation) ---
+export interface EntityReputation {
+  entityId: string
+  canonicalName: string
+  confirmed: number
+  rejected: number
+  needsRevision: number
+}
+export interface EntityReputationListResponse {
+  items: EntityReputation[]
+}
+
+// --- Оборудование фабрик (/v1/plant-equipment) ---
+export interface PlantEquipment {
+  id: string
+  plantName: string
+  equipmentType: string
+  model: string
+  circuitPosition: string
+  plantAliases: string[]
+  parameters: Record<string, unknown>
+  createdAt: string
+}
+export interface PlantEquipmentRequest {
+  plantName: string
+  equipmentType: string
+  model?: string
+  circuitPosition?: string
+  plantAliases?: string[]
+  parameters?: Record<string, unknown>
+}
+export interface PlantEquipmentListResponse {
+  items: PlantEquipment[]
+  total: number
+}
+export interface PlantSummary {
+  plantName: string
+  equipmentCount: number
+}
+export interface PlantsResponse {
+  items: PlantSummary[]
+}
+
+// --- Claims / Evidence (GET /v1/runs/:id/claims) ---
+export interface Claim {
+  id: string
+  subject: string
+  action: string
+  condition: string
+  metric: string
+  effectDirection: string
+  effectMagnitude: string
+  quote: string
+  source: Record<string, unknown>
+  sourceConfidence: string
+  citedByHypothesisIds: string[]
+  createdAt: string
+}
+export interface ClaimListResponse {
+  items: Claim[]
+  total: number
+}
+
+// --- Rerank (POST /v1/runs/:id/rerank) ---
+export interface RerankRequest {
+  rankingWeights: RankingWeights
 }

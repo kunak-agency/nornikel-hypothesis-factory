@@ -5,7 +5,8 @@ import { Icon } from '@iconify/vue'
 import { toast } from 'vue-sonner'
 
 import { useRunsStore, isTerminal } from '@/stores/runs'
-import type { Run } from '@/api/types'
+import { entitiesApi } from '@/api/entities'
+import type { Run, EntityReputation } from '@/api/types'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const store = useRunsStore()
@@ -19,14 +20,17 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'done', label: 'Готово' },
 ]
 
-const pendingDelete = ref<Run | null>(null)
-const deleting = ref(false)
-
 let timer: ReturnType<typeof setTimeout> | null = null
 
+// Фильтр — клиентский: GET /v1/runs не принимает status.
+const filteredRuns = computed(() => {
+  if (filter.value === 'all') return store.runs
+  if (filter.value === 'done') return store.runs.filter((r) => r.status === 'done')
+  return store.runs.filter((r) => !isTerminal(r.status)) // «В работе» = кроме done/failed
+})
+
 async function load() {
-  const status = filter.value === 'all' ? undefined : filter.value
-  await store.fetchRuns(1, 30, status)
+  await store.fetchRuns(1, 30)
   scheduleRefresh()
 }
 
@@ -43,18 +47,20 @@ function scheduleRefresh() {
 
 function setFilter(f: Filter) {
   filter.value = f
-  load()
 }
 
 function openRun(run: Run) {
   router.push(`/generator/${run.id}`)
 }
 
+// --- Удаление прогона (каскадное, DELETE /v1/runs/:id) ---
+const pendingDelete = ref<Run | null>(null)
+const deleting = ref(false)
+
 function askDelete(run: Run, e: Event) {
   e.stopPropagation()
   pendingDelete.value = run
 }
-
 async function confirmDelete() {
   if (!pendingDelete.value) return
   deleting.value = true
@@ -70,13 +76,41 @@ async function confirmDelete() {
 }
 
 const isEmpty = computed(() => !store.loading && !store.error && store.runs.length === 0)
+const noneInFilter = computed(
+  () => !store.loading && !store.error && store.runs.length > 0 && filteredRuns.value.length === 0,
+)
 
 function fmtDate(iso: string) {
   const d = new Date(iso)
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
 }
 
-onMounted(load)
+// --- Репутация сущностей (GET /v1/entities/reputation) ---
+const reputation = ref<EntityReputation[]>([])
+const repLoading = ref(false)
+const repError = ref<string | null>(null)
+
+async function loadReputation() {
+  repLoading.value = true
+  repError.value = null
+  try {
+    const resp = await entitiesApi.reputation()
+    // Наиболее «активные» сущности сверху.
+    reputation.value = (resp.items ?? []).sort(
+      (a, b) =>
+        b.confirmed + b.rejected + b.needsRevision - (a.confirmed + a.rejected + a.needsRevision),
+    )
+  } catch (e) {
+    repError.value = (e as Error).message
+  } finally {
+    repLoading.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+  loadReputation()
+})
 onBeforeUnmount(() => timer && clearTimeout(timer))
 </script>
 
@@ -89,7 +123,6 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
       </div>
       <div class="flex-1"></div>
 
-      <!-- Фильтр по статусу -->
       <div class="flex items-center gap-0.5 rounded-[10px] border border-bd bg-white p-0.5">
         <button
           v-for="f in FILTERS"
@@ -109,7 +142,7 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
       </RouterLink>
     </div>
 
-    <!-- Загрузка (скелетоны) -->
+    <!-- Загрузка -->
     <div v-if="store.loading && !store.runs.length" class="flex flex-col gap-2">
       <div v-for="i in 4" :key="i" class="card h-[62px] animate-pulse bg-muted/40"></div>
     </div>
@@ -133,13 +166,16 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
       </p>
     </div>
 
+    <div v-else-if="noneInFilter" class="card p-10 text-center text-[13.5px] text-sec">
+      Нет прогонов в статусе «{{ FILTERS.find((f) => f.key === filter)?.label }}».
+    </div>
+
     <!-- Список -->
     <div v-else class="card overflow-hidden">
-      <button
-        v-for="(run, i) in store.runs"
+      <div
+        v-for="(run, i) in filteredRuns"
         :key="run.id"
-        type="button"
-        class="row flex w-full items-center gap-4 px-5 py-3.5 text-left"
+        class="row flex w-full cursor-pointer items-center gap-4 px-5 py-3.5 text-left"
         :class="{ 'border-t border-bd': i }"
         @click="openRun(run)"
       >
@@ -154,44 +190,70 @@ onBeforeUnmount(() => timer && clearTimeout(timer))
             <span v-if="run.problemSpec?.targetMetals?.length" class="mono">
               {{ run.problemSpec.targetMetals.join(', ') }}
             </span>
-            <span v-if="run.status === 'failed' && run.error" class="text-danger truncate">
+            <span v-if="run.status === 'failed' && run.error" class="truncate text-danger">
               {{ run.error }}
             </span>
           </div>
         </div>
 
         <span class="mono shrink-0 text-[12px] text-faint">{{ fmtDate(run.createdAt) }}</span>
-
-        <span
+        <button
           class="grid size-8 shrink-0 place-items-center rounded-md text-faint transition hover:bg-muted hover:text-danger"
           title="Удалить прогон"
           @click="askDelete(run, $event)"
         >
           <Icon icon="lucide:trash-2" class="size-4" />
-        </span>
+        </button>
         <Icon icon="lucide:chevron-right" class="size-4 shrink-0 text-bds" />
-      </button>
+      </div>
     </div>
 
-    <!-- Репутация сущностей — бэкенд-эндпоинта нет (заглушка) -->
+    <!-- Репутация сущностей (GET /v1/entities/reputation) -->
     <div class="mt-8">
       <div class="mb-2 flex items-center gap-2">
         <Icon icon="lucide:trending-up" class="size-[15px] text-faint" />
         <span class="text-[14px] font-semibold text-ink">Репутация сущностей</span>
+        <span class="text-[12px] text-faint">видимая сторона обучения на обратной связи</span>
       </div>
-      <div class="card flex items-center gap-3 p-5 text-[13px] text-sec">
+
+      <div v-if="repLoading" class="card h-24 animate-pulse bg-muted/40"></div>
+      <div v-else-if="repError" class="card p-5 text-[13px] text-sec">
+        Не удалось загрузить репутацию: {{ repError }}
+        <button class="ml-2 text-accent hover:underline" @click="loadReputation">Повторить</button>
+      </div>
+      <div
+        v-else-if="!reputation.length"
+        class="card flex items-center gap-3 p-5 text-[13px] text-sec"
+      >
         <Icon icon="lucide:info" class="size-4 shrink-0 text-faint" />
-        Раздел появится, когда вы начнёте оценивать гипотезы — репутация копится из
-        обратной связи на карточках. (Эндпоинт агрегирования пока недоступен.)
+        Репутация появится, когда вы начнёте оценивать гипотезы.
+      </div>
+      <div v-else class="card overflow-hidden">
+        <div
+          class="grid grid-cols-[1fr_110px_110px_120px] gap-4 border-b border-bd px-5 py-3 lbl"
+        >
+          <span>Сущность</span>
+          <span class="text-right">Подтверждена</span>
+          <span class="text-right">Отклонена</span>
+          <span class="text-right">На доработке</span>
+        </div>
+        <div
+          v-for="(e, i) in reputation"
+          :key="e.entityId"
+          class="grid grid-cols-[1fr_110px_110px_120px] items-center gap-4 px-5 py-2.5"
+          :class="{ 'border-t border-bd': i }"
+        >
+          <span class="truncate text-[13.5px] text-ink">{{ e.canonicalName }}</span>
+          <span class="mono text-right text-[13px] text-ok">{{ e.confirmed }}</span>
+          <span class="mono text-right text-[13px] text-danger">{{ e.rejected }}</span>
+          <span class="mono text-right text-[13px] text-warn">{{ e.needsRevision }}</span>
+        </div>
       </div>
     </div>
 
     <!-- Подтверждение удаления (каскадное, необратимо) -->
     <Teleport to="body">
-      <div
-        v-if="pendingDelete"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      >
+      <div v-if="pendingDelete" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/30" @click="pendingDelete = null"></div>
         <div class="card relative w-full max-w-[420px] p-6">
           <div class="mb-1 text-[16px] font-bold text-ink">Удалить прогон?</div>
