@@ -39,18 +39,6 @@ function onLogout() {
           <img src="/nornickel.png" alt="НОРНИКЕЛЬ" class="h-[26px]" />
         </RouterLink>
 
-        <!-- Поиск — декоративная заглушка (глобального поиска в API нет). -->
-        <div class="px-3 pt-3">
-          <div
-            class="flex items-center gap-2 rounded-[10px] bg-muted px-2.5 py-2 text-faint"
-            title="Глобальный поиск (появится позже)"
-          >
-            <Icon icon="lucide:search" class="size-[15px]" />
-            <span class="text-[13px]">Поиск</span>
-            <span class="mono ml-auto rounded border border-bds px-1.5 py-0.5 text-[11px]">⌘K</span>
-          </div>
-        </div>
-
         <nav class="flex flex-col gap-0.5 px-3 pt-4">
           <div class="lbl px-2.5 pb-1.5">Платформа</div>
           <RouterLink

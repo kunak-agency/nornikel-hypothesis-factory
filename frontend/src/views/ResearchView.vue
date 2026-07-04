@@ -80,9 +80,18 @@ const noneInFilter = computed(
   () => !store.loading && !store.error && store.runs.length > 0 && filteredRuns.value.length === 0,
 )
 
+// Дата + время. new Date(iso) парсит UTC-метку, toLocaleString рендерит её в
+// таймзоне браузера — приведение к локальному времени пользователя автоматом.
 function fmtDate(iso: string) {
   const d = new Date(iso)
-  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+  return isNaN(d.getTime())
+    ? ''
+    : d.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
 }
 
 // --- Репутация сущностей (GET /v1/entities/reputation) ---
