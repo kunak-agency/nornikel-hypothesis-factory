@@ -203,7 +203,7 @@ func (s *Service) StartRunFromExcel(ctx context.Context, excelData []byte, rawTe
 // моменту уже завершился ответом 202).
 func (s *Service) RunPipelineAsync(run *domain.HypothesisRun) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 		if err := s.runPipeline(ctx, run); err != nil {
 			logger.LogErrorCtx(ctx, "pipeline run %s failed: %v", run.ID, err)
@@ -347,14 +347,9 @@ func (s *Service) GetRun(ctx context.Context, id string) (*domain.HypothesisRun,
 	if err != nil {
 		return nil, errs.NewValidationError("invalid run id")
 	}
-	run, err := s.repos.Runs.GetByID(ctx, uid)
-	if err != nil {
-		return nil, errs.Wrap(err, errs.ErrTypeInternal, "get run")
-	}
-	if run == nil {
-		return nil, errs.NewNotFoundError("run")
-	}
-	return run, nil
+	// GetByID сам возвращает типизированный errs.NotFound/Internal (requireFound) —
+	// пробрасываем как есть, НЕ оборачивая в Internal, иначе 404 стал бы 500.
+	return s.repos.Runs.GetByID(ctx, uid)
 }
 
 func (s *Service) GetHypotheses(ctx context.Context, runID string) ([]domain.Hypothesis, error) {
@@ -363,6 +358,22 @@ func (s *Service) GetHypotheses(ctx context.Context, runID string) ([]domain.Hyp
 		return nil, errs.NewValidationError("invalid run id")
 	}
 	return s.repos.Hypotheses.GetByRunID(ctx, uid)
+}
+
+// UpdateVerificationPlan заменяет дорожную карту гипотезы (PUT
+// /hypotheses/{id}/verification-plan) без затрагивания scores/rank — частичный
+// апдейт колонки в репозитории не конфликтует с rerank. GetByID отдаёт
+// типизированный 404 (requireFound), пробрасываем как есть.
+func (s *Service) UpdateVerificationPlan(ctx context.Context, id uuid.UUID, plan []domain.VerificationStep) (*domain.Hypothesis, error) {
+	hyp, err := s.repos.Hypotheses.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	hyp.VerificationPlan = plan
+	if err := s.repos.Hypotheses.UpdateVerificationPlan(ctx, hyp); err != nil {
+		return nil, errs.Wrap(err, errs.ErrTypeInternal, "persist verification plan")
+	}
+	return hyp, nil
 }
 
 func (s *Service) ListRuns(ctx context.Context, offset, limit int) ([]domain.HypothesisRun, int64, error) {

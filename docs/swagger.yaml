@@ -91,6 +91,12 @@ definitions:
       ErrTypeNotFound: "404"
       ErrTypeTimeout: "504"
       ErrTypeValidation: "422"
+    x-enum-descriptions:
+    - "422"
+    - "404"
+    - "409"
+    - "504"
+    - "500"
     x-enum-varnames:
     - ErrTypeValidation
     - ErrTypeNotFound
@@ -208,6 +214,41 @@ definitions:
         type: string
     required:
     - verdict
+    type: object
+  in.UpdateVerificationPlanRequest:
+    properties:
+      verificationPlan:
+        description: |-
+          min=1: `required` на слайсе проверяет лишь non-nil, а JSON `[]` декодится в
+          непустой len-0 слайс и прошёл бы валидацию — пустой массив молча стёр бы
+          сохранённую дорожную карту. min=1 закрывает это (пустой массив → 422).
+        items:
+          $ref: '#/definitions/in.VerificationStepInput'
+        maxItems: 50
+        minItems: 1
+        type: array
+    required:
+    - verificationPlan
+    type: object
+  in.VerificationStepInput:
+    properties:
+      estimatedCost:
+        example: ~200 т.р. на реагенты
+        type: string
+      estimatedDuration:
+        example: 1-2 недели
+        type: string
+      resource:
+        example: Лаборатория ОФ, реагенты
+        type: string
+      step:
+        example: Лабораторный тест флотации при pH 9.5
+        type: string
+      successCriterion:
+        example: Извлечение Ni +1.5% против базы
+        type: string
+    required:
+    - step
     type: object
   out.ClaimListResponse:
     properties:
@@ -738,6 +779,40 @@ paths:
           schema:
             $ref: '#/definitions/errs.Error'
       summary: Оценка гипотезы экспертом
+      tags:
+      - hypotheses
+  /hypotheses/{hypothesisId}/verification-plan:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID гипотезы
+        in: path
+        name: hypothesisId
+        required: true
+        type: string
+      - description: Шаги дорожной карты
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/in.UpdateVerificationPlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.HypothesisResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Обновление дорожной карты проверки гипотезы
       tags:
       - hypotheses
   /plant-equipment:
