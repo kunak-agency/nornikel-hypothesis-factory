@@ -46,6 +46,40 @@ func (r *ChunkRepo) GetNeighbors(ctx context.Context, documentID uuid.UUID, ordi
 	return chunks, err
 }
 
+// NeighborRange — один запрошенный [ordinal-radius, ordinal+radius] window
+// для GetNeighborsBatch.
+type NeighborRange struct {
+	DocumentID uuid.UUID
+	MinOrdinal int
+	MaxOrdinal int
+}
+
+// GetNeighborsBatch — то же самое, что вызвать GetNeighbors по одному разу
+// на каждый range, но одним SQL-запросом вместо N последовательных
+// round-trip'ов (claim extraction вызывает это для каждого retrieved-чанка —
+// обычно 15-40 за прогон). Вызывающая сторона сама фильтрует результат по
+// своему конкретному (DocumentID, Ordinal) окну — batch возвращает
+// объединение всех запрошенных диапазонов не сгруппированным.
+func (r *ChunkRepo) GetNeighborsBatch(ctx context.Context, ranges []NeighborRange) ([]domain.Chunk, error) {
+	if len(ranges) == 0 {
+		return nil, nil
+	}
+	db := r.db.WithContext(ctx)
+	query := db.Session(&gorm.Session{NewDB: true}).Model(&domain.Chunk{})
+	for i, rg := range ranges {
+		cond := db.Session(&gorm.Session{NewDB: true}).
+			Where("document_id = ? AND ordinal BETWEEN ? AND ?", rg.DocumentID, rg.MinOrdinal, rg.MaxOrdinal)
+		if i == 0 {
+			query = query.Where(cond)
+		} else {
+			query = query.Or(cond)
+		}
+	}
+	var chunks []domain.Chunk
+	err := query.Order("document_id, ordinal ASC").Find(&chunks).Error
+	return chunks, err
+}
+
 // hybridSearchRow — c.metadata/d.metadata выбираются как raw JSON ([]byte),
 // не через GORM-сериализатор (это raw SQL, не gorm.Find) — распаковываются
 // вручную в HybridSearch. Нужны для authors/year/edition (document.metadata)

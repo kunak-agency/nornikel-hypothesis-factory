@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"io"
-
 	"hypothesis-factory/out"
 	"hypothesis-factory/pkg/errs"
 	"hypothesis-factory/services/knowledgebase"
@@ -30,18 +28,9 @@ import (
 // @Failure      500  {object}  errs.Error
 // @Router       /documents [post]
 func (h *Handler) IngestDocument(c *fiber.Ctx) error {
-	fileHeader, err := c.FormFile("file")
+	data, filename, err := readUploadedFile(c, "file")
 	if err != nil {
-		return errs.NewBadRequestError("missing file: " + err.Error())
-	}
-	file, err := fileHeader.Open()
-	if err != nil {
-		return errs.NewBadRequestError("open file: " + err.Error())
-	}
-	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return errs.NewInternalError("read file: " + err.Error())
+		return err
 	}
 
 	// authors/year/edition — свободные поля, а не пересказ LLM; сейчас для
@@ -61,9 +50,9 @@ func (h *Handler) IngestDocument(c *fiber.Ctx) error {
 	}
 
 	n, err := h.services.KnowledgeBase.Ingest(c.UserContext(), knowledgebase.IngestInput{
-		Filename:   fileHeader.Filename,
+		Filename:   filename,
 		Data:       data,
-		Title:      firstNonEmpty(c.FormValue("title"), fileHeader.Filename),
+		Title:      firstNonEmpty(c.FormValue("title"), filename),
 		SourceType: firstNonEmpty(c.FormValue("sourceType"), "report"),
 		Domain:     c.FormValue("domain"),
 		Language:   c.FormValue("language"),

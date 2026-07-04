@@ -61,8 +61,13 @@ const parentContextRadius = 1
 
 // extractClaims извлекает claims по каждому retrieved-чанку конкурентно
 // (ограниченно), не последовательно — N чанков стоит ~1 LLM round-trip по
-// времени, а не N. Требуется, чтобы уложиться в "минуты, не часы".
+// времени, а не N. Требуется, чтобы уложиться в "минуты, не часы". Parent-
+// контекст для ВСЕХ чанков поднимается одним batched-запросом заранее — раньше
+// каждая горутина сама дёргала GetNeighbors, N отдельных round-trip'ов к БД
+// вместо одного.
 func extractClaims(ctx context.Context, client externalApi.LLMClient, chunkRepo *repositories.ChunkRepo, chunks []domain.RetrievedChunk) []domain.Claim {
+	parentContents := buildParentContexts(ctx, chunkRepo, chunks)
+
 	results := make([][]domain.Claim, len(chunks))
 	sem := make(chan struct{}, claimExtractionConcurrency)
 	var wg sync.WaitGroup
@@ -73,8 +78,7 @@ func extractClaims(ctx context.Context, client externalApi.LLMClient, chunkRepo 
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			parentContent := buildParentContext(ctx, chunkRepo, chunk)
-			results[i] = extractClaimsFromChunk(ctx, client, chunk, parentContent)
+			results[i] = extractClaimsFromChunk(ctx, client, chunk, parentContents[i])
 		}(i, chunk)
 	}
 	wg.Wait()
@@ -86,23 +90,62 @@ func extractClaims(ctx context.Context, client externalApi.LLMClient, chunkRepo 
 	return all
 }
 
-// buildParentContext стягивает retrieved-чанк с его непосредственными
-// соседями в один блок текста. Падает обратно на chunk.Content, если запрос
-// соседей не удался — child-only extraction хуже, но не хуже, чем было
-// раньше.
-func buildParentContext(ctx context.Context, chunkRepo *repositories.ChunkRepo, chunk domain.RetrievedChunk) string {
-	neighbors, err := chunkRepo.GetNeighbors(ctx, chunk.DocumentID, chunk.Ordinal, parentContextRadius)
-	if err != nil || len(neighbors) == 0 {
-		return chunk.Content
+// buildParentContexts стягивает каждый retrieved-чанк с его непосредственными
+// соседями (тот же документ, ordinal±parentContextRadius) в один блок текста
+// — Docling эмитит table-чанк и поясняющий его текст как соседние ordinal
+// (даже когда HybridChunker.merge_peers не смог их слить из-за разных
+// heading), так что более широкий parent-контекст даёт claim extraction
+// шанс процитировать дословно то, что физически лежит в соседнем чанке.
+// Один batched-запрос вместо одного GetNeighbors на чанк; при ошибке батча
+// падает обратно на chunk.Content для всех чанков разом (child-only
+// extraction хуже, но не хуже, чем было раньше).
+func buildParentContexts(ctx context.Context, chunkRepo *repositories.ChunkRepo, chunks []domain.RetrievedChunk) []string {
+	out := make([]string, len(chunks))
+	if len(chunks) == 0 {
+		return out
 	}
-	var b strings.Builder
-	for _, n := range neighbors {
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
+
+	ranges := make([]repositories.NeighborRange, len(chunks))
+	for i, c := range chunks {
+		ranges[i] = repositories.NeighborRange{
+			DocumentID: c.DocumentID,
+			MinOrdinal: c.Ordinal - parentContextRadius,
+			MaxOrdinal: c.Ordinal + parentContextRadius,
 		}
-		b.WriteString(n.Content)
 	}
-	return b.String()
+
+	neighbors, err := chunkRepo.GetNeighborsBatch(ctx, ranges)
+	if err != nil {
+		for i, c := range chunks {
+			out[i] = c.Content
+		}
+		return out
+	}
+
+	byDoc := make(map[uuid.UUID][]domain.Chunk, len(chunks))
+	for _, n := range neighbors {
+		byDoc[n.DocumentID] = append(byDoc[n.DocumentID], n)
+	}
+
+	for i, c := range chunks {
+		min, max := c.Ordinal-parentContextRadius, c.Ordinal+parentContextRadius
+		var b strings.Builder
+		for _, n := range byDoc[c.DocumentID] {
+			if n.Ordinal < min || n.Ordinal > max {
+				continue
+			}
+			if b.Len() > 0 {
+				b.WriteString("\n\n")
+			}
+			b.WriteString(n.Content)
+		}
+		if b.Len() == 0 {
+			out[i] = c.Content
+		} else {
+			out[i] = b.String()
+		}
+	}
+	return out
 }
 
 // claimSourceMetadata собирает всё, что известно об источнике claim'а:

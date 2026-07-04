@@ -19,7 +19,7 @@ type retrievalFacet struct {
 	minFloor int    // сколько слотов гарантированы фасету, даже если его скор ниже других
 }
 
-// retrievalFacets — детерминированная (не LLM-генерируемая на лету)
+// retrievalFacetsByDomain — детерминированная (не LLM-генерируемая на лету)
 // декомпозиция запроса на аспекты предметной области. Deep-research
 // (2026-07, 106 агентов, авторитетные источники) подтвердил: наивный
 // paraphrase-style multi-query (RAG-Fusion — LLM перефразирует один и тот же
@@ -48,8 +48,9 @@ type retrievalFacet struct {
 // просто не долетал до top-K по чисто минералогическому запросу. Эти два
 // фасета добавлены явно, чтобы закрыть систематический слепой угол.
 //
-// Фасеты сейчас specific для домена "flotation" — при добавлении новых
-// доменов потребуется своя таксономия фасетов на домен (TODO, не блокер).
+// Фасеты хранятся per-domain в retrievalFacetsByDomain (см. facetsForDomain
+// ниже) — домен без записи в реестре откатывается на единственный
+// base-query фасет вместо того, чтобы молча получить таксономию "flotation".
 //
 // minFloor — не "справедливая доля", а анти-голодание: гарантия, что фасет
 // не обнулится структурно из-за того, что его тема хуже ложится в лексику
@@ -62,10 +63,26 @@ type retrievalFacet struct {
 // конкуренция по сырому reranker-скору между всеми фасетами разом (скор
 // bge-reranker сигмоид-калиброван, т.е. интерпретируется как P(релевантно
 // своему запросу) и потому сравним между разными facet-запросами).
-var retrievalFacets = []retrievalFacet{
-	{suffix: "", minFloor: 3},
-	{suffix: "оборудование и схема классификации: гидроциклоны, диаметр насадок, классификаторы, грохота, магнитная сепарация", minFloor: 2},
-	{suffix: "измельчение: степень измельчения, крупность помола, футеровка мельниц, цепь измельчения", minFloor: 2},
+var retrievalFacetsByDomain = map[string][]retrievalFacet{
+	"flotation": {
+		{suffix: "", minFloor: 3},
+		{suffix: "оборудование и схема классификации: гидроциклоны, диаметр насадок, классификаторы, грохота, магнитная сепарация", minFloor: 2},
+		{suffix: "измельчение: степень измельчения, крупность помола, футеровка мельниц, цепь измельчения", minFloor: 2},
+	},
+}
+
+// facetsForDomain возвращает таксономию фасетов для конкретного домена —
+// domainFilter уже был обязательным параметром retrieve() и раньше просто
+// игнорировался при выборе фасетов, из-за чего второй домен молча получал бы
+// facet-таксономию "flotation" вместо своей. Для домена без записи в реестре
+// используется единственный base-query фасет с floor=topK — эквивалент
+// single-query retrieval (без выгоды декомпозиции, но и без искусственного
+// урезания топа под чужую тематику).
+func facetsForDomain(domainFilter string, topK int) []retrievalFacet {
+	if facets, ok := retrievalFacetsByDomain[domainFilter]; ok {
+		return facets
+	}
+	return []retrievalFacet{{suffix: "", minFloor: topK}}
 }
 
 // retrieve — facet-декомпозированный гибридный (лексика+вектор) поиск:
@@ -78,14 +95,15 @@ var retrievalFacets = []retrievalFacet{
 // не разбавляется мусором ради процента.
 func retrieve(ctx context.Context, chunks *repositories.ChunkRepo, pyworker *externalApi.PyworkerClient, spec domain.ProblemSpec, domainFilter string, topK int) ([]domain.RetrievedChunk, error) {
 	baseQuery := buildRetrievalQuery(spec)
+	facets := facetsForDomain(domainFilter, topK)
 
 	type facetResult struct {
 		candidates []domain.RetrievedChunk
 		err        error
 	}
-	results := make([]facetResult, len(retrievalFacets))
+	results := make([]facetResult, len(facets))
 	var wg sync.WaitGroup
-	for i, facet := range retrievalFacets {
+	for i, facet := range facets {
 		wg.Add(1)
 		go func(i int, facet retrievalFacet) {
 			defer wg.Done()
@@ -141,7 +159,7 @@ func retrieve(ctx context.Context, chunks *repositories.ChunkRepo, pyworker *ext
 		succeeded = true
 		taken := 0
 		for _, c := range r.candidates {
-			if taken >= retrievalFacets[i].minFloor {
+			if taken >= facets[i].minFloor {
 				break
 			}
 			id := c.ID.String()

@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
-	"io"
 
+	"hypothesis-factory/domain"
 	"hypothesis-factory/in"
 	"hypothesis-factory/out"
 	"hypothesis-factory/pkg/errs"
@@ -11,6 +12,7 @@ import (
 	"hypothesis-factory/services/hypothesisfactory"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 )
 
 // CreateRun запускает пайплайн генерации гипотез. Синхронно выполняется
@@ -76,18 +78,9 @@ func (h *Handler) CreateRun(c *fiber.Ctx) error {
 // @Failure      500  {object}  errs.Error
 // @Router       /runs/from-excel [post]
 func (h *Handler) CreateRunFromExcel(c *fiber.Ctx) error {
-	fileHeader, err := c.FormFile("file")
+	data, _, err := readUploadedFile(c, "file")
 	if err != nil {
-		return errs.NewBadRequestError("missing file: " + err.Error())
-	}
-	file, err := fileHeader.Open()
-	if err != nil {
-		return errs.NewBadRequestError("open file: " + err.Error())
-	}
-	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return errs.NewInternalError("read file: " + err.Error())
+		return err
 	}
 
 	var rawInput map[string]any
@@ -181,6 +174,25 @@ func (h *Handler) GetRunGraph(c *fiber.Ctx) error {
 	return c.JSON(out.GraphFromDomain(g))
 }
 
+// loadRunReportData — общая для всех report.* хендлеров последовательность
+// (run → hypotheses → claim sources → evidence sources), которая раньше
+// была скопирована в каждый из 5 хендлеров по отдельности.
+func (h *Handler) loadRunReportData(ctx context.Context, runID string) (*domain.HypothesisRun, []domain.Hypothesis, map[uuid.UUID][]string, error) {
+	run, err := h.services.Pipeline.GetRun(ctx, runID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	hyps, err := h.services.Pipeline.GetHypotheses(ctx, runID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	claims, err := h.services.Pipeline.GetClaimSources(ctx, hyps)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return run, hyps, hypothesisfactory.BuildEvidenceSources(hyps, claims), nil
+}
+
 // GetRunReportMarkdown отдаёт человекочитаемый Markdown-отчёт по прогону.
 // @Summary      Markdown-отчёт по прогону
 // @Tags         runs
@@ -190,19 +202,10 @@ func (h *Handler) GetRunGraph(c *fiber.Ctx) error {
 // @Failure      404    {object}  errs.Error
 // @Router       /runs/{runId}/report.md [get]
 func (h *Handler) GetRunReportMarkdown(c *fiber.Ctx) error {
-	run, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId"))
+	run, hyps, sources, err := h.loadRunReportData(c.UserContext(), c.Params("runId"))
 	if err != nil {
 		return err
 	}
-	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
-	if err != nil {
-		return err
-	}
-	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
-	if err != nil {
-		return err
-	}
-	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
 	md := hypothesisfactory.RenderMarkdownReport(run.ProblemSpec, hyps, sources, run.KnowledgeGaps)
 	c.Set(fiber.HeaderContentType, "text/markdown; charset=utf-8")
 	return c.SendString(md)
@@ -218,19 +221,10 @@ func (h *Handler) GetRunReportMarkdown(c *fiber.Ctx) error {
 // @Failure      500    {object}  errs.Error
 // @Router       /runs/{runId}/report.pdf [get]
 func (h *Handler) GetRunReportPDF(c *fiber.Ctx) error {
-	run, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId"))
+	run, hyps, sources, err := h.loadRunReportData(c.UserContext(), c.Params("runId"))
 	if err != nil {
 		return err
 	}
-	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
-	if err != nil {
-		return err
-	}
-	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
-	if err != nil {
-		return err
-	}
-	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
 	pdfBytes, err := export.ToPDF(run.ProblemSpec, hyps, sources, run.KnowledgeGaps)
 	if err != nil {
 		return errs.NewInternalError("render pdf: " + err.Error())
@@ -250,19 +244,10 @@ func (h *Handler) GetRunReportPDF(c *fiber.Ctx) error {
 // @Failure      500    {object}  errs.Error
 // @Router       /runs/{runId}/report.docx [get]
 func (h *Handler) GetRunReportDOCX(c *fiber.Ctx) error {
-	run, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId"))
+	run, hyps, sources, err := h.loadRunReportData(c.UserContext(), c.Params("runId"))
 	if err != nil {
 		return err
 	}
-	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
-	if err != nil {
-		return err
-	}
-	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
-	if err != nil {
-		return err
-	}
-	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
 	docxBytes, err := export.ToDOCX(run.ProblemSpec, hyps, sources, run.KnowledgeGaps)
 	if err != nil {
 		return errs.NewInternalError("render docx: " + err.Error())
@@ -282,18 +267,10 @@ func (h *Handler) GetRunReportDOCX(c *fiber.Ctx) error {
 // @Failure      500    {object}  errs.Error
 // @Router       /runs/{runId}/report.csv [get]
 func (h *Handler) GetRunReportCSV(c *fiber.Ctx) error {
-	if _, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId")); err != nil {
-		return err
-	}
-	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
+	_, hyps, sources, err := h.loadRunReportData(c.UserContext(), c.Params("runId"))
 	if err != nil {
 		return err
 	}
-	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
-	if err != nil {
-		return err
-	}
-	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
 	csvBytes, err := export.ToCSV(hyps, sources)
 	if err != nil {
 		return errs.NewInternalError("render csv: " + err.Error())
@@ -319,18 +296,10 @@ func (h *Handler) GetRunReportCSV(c *fiber.Ctx) error {
 // @Failure      500  {object}  errs.Error
 // @Router       /runs/{runId}/report.jira.json [get]
 func (h *Handler) GetRunReportJira(c *fiber.Ctx) error {
-	if _, err := h.services.Pipeline.GetRun(c.UserContext(), c.Params("runId")); err != nil {
-		return err
-	}
-	hyps, err := h.services.Pipeline.GetHypotheses(c.UserContext(), c.Params("runId"))
+	_, hyps, sources, err := h.loadRunReportData(c.UserContext(), c.Params("runId"))
 	if err != nil {
 		return err
 	}
-	claims, err := h.services.Pipeline.GetClaimSources(c.UserContext(), hyps)
-	if err != nil {
-		return err
-	}
-	sources := hypothesisfactory.BuildEvidenceSources(hyps, claims)
 
 	projectKey := c.Query("projectKey")
 	if projectKey == "" {
