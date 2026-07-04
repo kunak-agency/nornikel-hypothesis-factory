@@ -22,7 +22,7 @@ func sampleHypotheses() []domain.Hypothesis {
 	return []domain.Hypothesis{
 		{
 			Rank:              1,
-			Statement:         "Уменьшить диаметр насадки гидроциклона с 12 до 8 мм",
+			Statement:         "Повысить расход собирателя в основной флотации с 40 до 60 г/т",
 			Mechanism:         "снижает граничную крупность разделения, доразмалывая закрытые сростки",
 			ExpectedKPIEffect: domain.KPIEffect{Metric: "извлечение Ni", Direction: "increase", Magnitude: "+3-5%"},
 			Risks:             []string{"рост нагрузки на мельницу"},

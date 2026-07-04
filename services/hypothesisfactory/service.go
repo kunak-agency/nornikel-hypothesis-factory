@@ -230,6 +230,14 @@ func (s *Service) runPipeline(ctx context.Context, run *domain.HypothesisRun) er
 		return fmt.Errorf("update status extracting: %w", err)
 	}
 	claims := extractClaims(ctx, s.llm, s.repos.Chunks, chunks)
+	if len(claims) == 0 {
+		// Честный отказ вместо генерации на пустом evidence-pack: без
+		// grounded claims модель либо вернёт пустоту, либо сфабрикует
+		// ссылки (которые всё равно будут отброшены) — в обоих случаях
+		// результат непроверяем, и статус failed с понятной причиной
+		// полезнее, чем пустой «успешный» отчёт.
+		return fmt.Errorf("no grounded claims extracted from %d retrieved chunks — knowledge base has no verifiable evidence for this problem", len(chunks))
+	}
 	resolveEntities(ctx, s.repos.Entities, s.pyworker, claims)
 	if err := s.repos.Claims.CreateBatch(ctx, claims); err != nil {
 		return fmt.Errorf("persist claims: %w", err)

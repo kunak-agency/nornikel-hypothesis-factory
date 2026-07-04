@@ -8,6 +8,7 @@ import (
 
 	"hypothesis-factory/domain"
 	"hypothesis-factory/externalApi"
+	"hypothesis-factory/pkg/logger"
 
 	"github.com/google/uuid"
 )
@@ -134,6 +135,14 @@ func generateHypotheses(ctx context.Context, client externalApi.LLMClient, spec 
 					refs = append(refs, u)
 				}
 			}
+		}
+		// Гипотеза, все evidence_refs которой оказались выдуманными
+		// (не совпали ни с одним реальным claim_id), отбрасывается целиком:
+		// «evidence-backed» — это контракт системы, а не пожелание к LLM,
+		// и без единой реальной ссылки гипотеза непроверяема по построению.
+		if len(refs) == 0 {
+			logger.LogWarningCtx(ctx, "hypothesis dropped, no valid evidence refs: %q", r.Statement)
+			continue
 		}
 		plan := make([]domain.VerificationStep, 0, len(r.VerificationPlan))
 		for _, p := range r.VerificationPlan {

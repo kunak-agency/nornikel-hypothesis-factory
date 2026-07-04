@@ -1,5 +1,7 @@
 // Package feedback принимает экспертную оценку гипотез (confirmed/rejected/
-// needs_revision) — задел под "обучение на фидбэке" из кейса.
+// needs_revision). Оценки питают "обучение на фидбэке": репутация сущностей
+// (см. hypothesisfactory.loadEntityReputations) подмешивается в следующие
+// прогоны генерации.
 package feedback
 
 import (
