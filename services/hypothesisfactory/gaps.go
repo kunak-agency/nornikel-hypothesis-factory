@@ -39,9 +39,22 @@ var gapTopicStopwords = map[string]bool{
 // "выявление пробелов в знаниях" — это честный сигнал "тут evidence мало/
 // нет", а не LLM-домысел.
 func detectKnowledgeGaps(spec domain.ProblemSpec, claims []domain.Claim) []string {
+	// Haystack включает не только текст claim'а, но и контекст его
+	// источника (заголовок документа, раздел): claim из главы «Медные,
+	// медно-пиритные руды» или регламента «Cu-Ni флотация» — это медное
+	// evidence, даже когда сама цитата слово «медь» не содержит; без
+	// контекста источника проверка объявляла ложный пробел по Cu на
+	// корпусе, целиком посвящённом Cu-Ni рудам.
 	haystacks := make([]string, len(claims))
 	for i, c := range claims {
-		haystacks[i] = normalizeForMatch(c.Subject + " " + c.Metric + " " + c.Quote)
+		parts := []string{c.Subject, c.Metric, c.Condition, c.Quote}
+		if v, ok := c.Metadata["document_title"].(string); ok {
+			parts = append(parts, v)
+		}
+		if v, ok := c.Metadata["section"].(string); ok {
+			parts = append(parts, v)
+		}
+		haystacks[i] = normalizeForMatch(strings.Join(parts, " "))
 	}
 
 	var gaps []string
@@ -69,7 +82,13 @@ func metalCovered(symbol string, haystacks []string) bool {
 	sym := strings.ToLower(strings.TrimSpace(symbol))
 	stems := metalStems[sym]
 	for _, h := range haystacks {
-		for _, w := range strings.Fields(h) {
+		// Токенизация по не-буквоцифрам, а не по пробелам: "Cu-Ni" должен
+		// давать токены "cu" и "ni", иначе символ в составных написаниях
+		// не находится.
+		tokens := strings.FieldsFunc(h, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		for _, w := range tokens {
 			if w == sym {
 				return true
 			}

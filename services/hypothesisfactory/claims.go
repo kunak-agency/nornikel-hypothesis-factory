@@ -152,6 +152,13 @@ func claimSourceMetadata(chunk domain.RetrievedChunk) map[string]any {
 		"document_title": chunk.DocumentTitle,
 		"source_type":    chunk.SourceType,
 	}
+	if chunk.Section != "" {
+		// Раздел источника — контекст claim'а ("Медные, медно-пиритные
+		// руды"): нужен и отчёту, и проверке покрытия тем (gaps.go) — claim,
+		// извлечённый из медной главы, является медным evidence, даже если
+		// сама цитата слово «медь» не содержит.
+		meta["section"] = chunk.Section
+	}
 	if v, ok := chunk.Metadata["article_authors"].(string); ok && v != "" {
 		meta["authors"] = v
 	} else if v, ok := chunk.DocumentMetadata["authors"].(string); ok && v != "" {
