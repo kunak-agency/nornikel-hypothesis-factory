@@ -6,6 +6,22 @@ import { toast } from 'vue-sonner'
 import { documentsApi } from '@/api/documents'
 import { equipmentApi } from '@/api/equipment'
 import type { DocumentItem, PlantEquipment, PlantEquipmentRequest, PlantSummary } from '@/api/types'
+import AppSelect from '@/components/ui/AppSelect.vue'
+
+// Допустимые типы оборудования — строго синхронизированы с валидацией бэкенда
+// (in/plant_equipment.go, тег `oneof`). Любое другое значение → 422.
+const EQUIPMENT_TYPES = [
+  { value: 'hydrocyclone', label: 'Гидроциклон' },
+  { value: 'mill', label: 'Мельница' },
+  { value: 'classifier', label: 'Классификатор' },
+  { value: 'screen', label: 'Грохот' },
+  { value: 'flotation_cell', label: 'Флотомашина' },
+  { value: 'thickener', label: 'Сгуститель' },
+  { value: 'crusher', label: 'Дробилка' },
+  { value: 'pump', label: 'Насос' },
+]
+const equipmentTypeLabel = (v: string) =>
+  EQUIPMENT_TYPES.find((t) => t.value === v)?.label ?? v
 
 type Tab = 'documents' | 'equipment'
 const tab = ref<Tab>('documents')
@@ -120,7 +136,11 @@ function openEdit(e: PlantEquipment) {
 }
 
 const canSave = computed(
-  () => draft.value.plantName.trim() && draft.value.equipmentType.trim() && !saving.value,
+  () =>
+    draft.value.plantName.trim() &&
+    draft.value.equipmentType.trim() &&
+    draft.value.model.trim() &&
+    !saving.value,
 )
 
 async function save() {
@@ -129,7 +149,7 @@ async function save() {
   const body: PlantEquipmentRequest = {
     plantName: draft.value.plantName.trim(),
     equipmentType: draft.value.equipmentType.trim(),
-    model: draft.value.model?.trim() || undefined,
+    model: draft.value.model.trim(),
     circuitPosition: draft.value.circuitPosition?.trim() || undefined,
     plantAliases: draft.value.aliasesText
       .split(',')
@@ -304,7 +324,7 @@ onMounted(loadDocs)
               :class="{ 'border-t border-bd': i }"
             >
               <div class="min-w-0">
-                <div class="truncate text-[13.5px] font-medium text-ink">{{ e.equipmentType }}</div>
+                <div class="truncate text-[13.5px] font-medium text-ink">{{ equipmentTypeLabel(e.equipmentType) }}</div>
                 <div v-if="e.plantAliases?.length" class="truncate text-[11px] text-faint">
                   {{ e.plantAliases.join(', ') }}
                 </div>
@@ -351,11 +371,15 @@ onMounted(loadDocs)
             </div>
             <div>
               <label class="lbl mb-1 block">Тип оборудования *</label>
-              <input v-model="draft.equipmentType" class="inp" placeholder="напр. Флотомашина" />
+              <AppSelect
+                v-model="draft.equipmentType"
+                :options="EQUIPMENT_TYPES"
+                placeholder="Выберите тип…"
+              />
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="lbl mb-1 block">Модель</label>
+                <label class="lbl mb-1 block">Модель *</label>
                 <input v-model="draft.model" class="inp" placeholder="напр. РИФ-8.5" />
               </div>
               <div>
@@ -408,7 +432,7 @@ onMounted(loadDocs)
         <div class="card relative w-full max-w-[420px] p-6">
           <div class="mb-1 text-[16px] font-bold text-ink">Удалить запись?</div>
           <p class="mb-5 text-[13px] leading-relaxed text-sec">
-            «{{ pendingEq.equipmentType }}» ({{ pendingEq.plantName }}) будет удалено. Действие необратимо.
+            «{{ equipmentTypeLabel(pendingEq.equipmentType) }}» ({{ pendingEq.plantName }}) будет удалено. Действие необратимо.
           </p>
           <div class="flex justify-end gap-2">
             <button class="btn btn-ghost px-4 py-2 text-[13px]" @click="pendingEq = null">Отмена</button>
