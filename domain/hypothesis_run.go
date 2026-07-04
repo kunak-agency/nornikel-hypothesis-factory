@@ -21,6 +21,14 @@ type ProblemSpec struct {
 	AvailableEquipment []string `json:"available_equipment"`
 	Constraints        []string `json:"constraints"`
 	Horizon            string   `json:"horizon"`
+	// EquipmentTypes/EquipmentByType — типы оборудования фабрики
+	// (hydrocyclone/mill/...) и модели каждого типа, заполняются кодом из
+	// plant_equipment (не LLM и не API — json:"-"). Нужны retrieval'у для
+	// построения per-type фасетов с рычагами конкретных аппаратов (см.
+	// equipmentTypeLevers). Транзиентно и дёшево восстановимо, поэтому не
+	// персистится вместе с ProblemSpec.
+	EquipmentTypes  []string            `json:"-"`
+	EquipmentByType map[string][]string `json:"-"`
 }
 
 // RankingWeights — режим "экспертной настройки" ранжирования (кейс явно

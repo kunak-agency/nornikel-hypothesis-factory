@@ -3,6 +3,7 @@ package hypothesisfactory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"hypothesis-factory/domain"
@@ -105,10 +106,25 @@ func (s *Service) enrichAvailableEquipment(ctx context.Context, spec *domain.Pro
 		return
 	}
 	seen := make(map[string]bool)
+	seenTypes := make(map[string]bool)
+	seenTypeModel := make(map[string]bool)
 	for _, e := range matches {
 		desc := e.Model
 		if e.CircuitPosition != "" {
 			desc = fmt.Sprintf("%s (%s)", desc, e.CircuitPosition)
+		}
+		if e.EquipmentType != "" {
+			if !seenTypes[e.EquipmentType] {
+				seenTypes[e.EquipmentType] = true
+				spec.EquipmentTypes = append(spec.EquipmentTypes, e.EquipmentType)
+			}
+			if e.Model != "" && !seenTypeModel[e.EquipmentType+"|"+e.Model] {
+				seenTypeModel[e.EquipmentType+"|"+e.Model] = true
+				if spec.EquipmentByType == nil {
+					spec.EquipmentByType = map[string][]string{}
+				}
+				spec.EquipmentByType[e.EquipmentType] = append(spec.EquipmentByType[e.EquipmentType], e.Model)
+			}
 		}
 		if desc == "" || seen[desc] {
 			continue
@@ -116,6 +132,7 @@ func (s *Service) enrichAvailableEquipment(ctx context.Context, spec *domain.Pro
 		seen[desc] = true
 		spec.AvailableEquipment = append(spec.AvailableEquipment, desc)
 	}
+	sort.Strings(spec.EquipmentTypes)
 }
 
 // StartRunFromExcel — то же самое, что StartRun, но loss_hotspots и
