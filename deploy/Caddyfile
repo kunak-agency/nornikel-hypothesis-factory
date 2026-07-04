@@ -1,0 +1,21 @@
+# Reverse proxy for the deployed VM. Caddy terminates TLS (auto Let's Encrypt)
+# on :443 and routes by hostname to the internal services over the compose
+# network — so api/pyworker are never reached on their raw ports from outside.
+#
+# DNS A-records for both names must point at the VM public IP before Caddy can
+# obtain certificates (HTTP-01 challenge on :80).
+
+# Backend API (Go) — public, no auth (called by the frontend / demo).
+api-nornikel.rmdigital.ru {
+	reverse_proxy api:8080
+}
+
+# Embeddings/rerank worker (Python) — protected: without auth anyone could burn
+# CPU via /embed and /rerank. Hash comes from the environment (EMBEDDINGS_PW_HASH,
+# a `caddy hash-password` bcrypt value) so no secret lives in git.
+embeddings-nornikel.rmdigital.ru {
+	basic_auth {
+		embeddings {$EMBEDDINGS_PW_HASH}
+	}
+	reverse_proxy pyworker:8090
+}

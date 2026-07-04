@@ -13,14 +13,29 @@ Factory — часть пайплайна, которая выполняется
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-app = FastAPI(title="hypothesis-factory-pyworker")
-
 _bge_model = None
 _reranker_model = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Eager-load both models at container startup instead of on the first
+    # request. Weights are baked into the image (see Dockerfile), so this is a
+    # local disk load, not a HuggingFace download — it just moves the one-time
+    # "прогрев" out of the first user request and into boot. Combined with a
+    # Cloud Run startup probe on /healthz, traffic is only routed once models
+    # are in RAM. Loading off the event loop keeps startup responsive.
+    await asyncio.to_thread(get_bge_model)
+    await asyncio.to_thread(get_reranker_model)
+    yield
+
+
+app = FastAPI(title="hypothesis-factory-pyworker", lifespan=lifespan)
 
 
 def get_bge_model():

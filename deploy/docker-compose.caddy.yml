@@ -1,0 +1,32 @@
+# Production ingress overlay — use ON TOP of the base compose on the deployed VM:
+#
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d --build
+#
+# Adds a Caddy reverse proxy (auto-HTTPS) in front of api + pyworker. The base
+# compose is untouched so local dev (`docker compose up`) stays plain HTTP.
+#
+# Requires in .env (VM only): POSTGRES_PASSWORD, EMBEDDINGS_PW_HASH,
+# YANDEX_API_KEY, YANDEX_FOLDER_ID.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+      - pyworker
+    ports:
+      - "80:80"
+      - "443:443"
+    # env_file (not ${..} interpolation): the bcrypt hash contains '$' which the
+    # compose interpolator would mangle; env_file passes values verbatim, and the
+    # Caddyfile reads {$EMBEDDINGS_PW_HASH} from the container environment.
+    env_file:
+      - .env
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

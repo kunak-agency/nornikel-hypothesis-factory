@@ -3,10 +3,13 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Port 5435 is exposed directly to the internet on the deployed VM, so the
+      # default password must be overridable. Set POSTGRES_PASSWORD in .env on
+      # any public deployment; local dev falls back to `postgres`.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: hypothesis_factory
     ports:
-      - "5433:5432"
+      - "5435:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Готовый дамп базы знаний: postgres-образ выполняет db/*.sql.gz
@@ -32,9 +35,9 @@ services:
     build: ./services/pyworker
     ports:
       - "8090:8090"
-    volumes:
-      - hf-cache:/root/.cache/huggingface
-    # First request downloads BGE-M3 / bge-reranker-v2-m3 — cached afterwards.
+    # Models (BGE-M3 / bge-reranker-v2-m3) are baked into the image at build
+    # time and eager-loaded at startup — no runtime HuggingFace download, no
+    # first-request "прогрев". The old hf-cache volume is gone: nothing to warm.
 
   api:
     build: .
@@ -46,11 +49,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/hypothesis_factory?sslmode=disable
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/hypothesis_factory?sslmode=disable
       WORKER_BASE_URL: http://pyworker:8090
       YANDEX_API_KEY: ${YANDEX_API_KEY}
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
 
 volumes:
   pgdata:
-  hf-cache:
