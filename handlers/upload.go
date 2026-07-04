@@ -8,10 +8,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// readUploadedFile reads a multipart form file field into memory — the
-// shared "FormFile → Open → ReadAll" body duplicated across IngestDocument
-// and CreateRunFromExcel. Returns the original filename alongside the bytes
-// since callers need it for Document.FilePath/default title.
+// readUploadedFile читает поле multipart-формы в память — общее тело
+// "FormFile → Open → ReadAll" для IngestDocument и CreateRunFromExcel.
+// Возвращает исходное имя файла вместе с байтами (нужно вызывающей стороне
+// для Document.FilePath/дефолтного заголовка).
 func readUploadedFile(c *fiber.Ctx, field string) (data []byte, filename string, err error) {
 	fileHeader, err := c.FormFile(field)
 	if err != nil {

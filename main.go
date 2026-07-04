@@ -66,7 +66,7 @@ func main() {
 		// Прогон пайплайна асинхронный (см. handlers.CreateRun), поэтому
 		// долгие ответы тут не нужны — но ingestion больших PDF идёт
 		// синхронно внутри одного запроса, отсюда большой ReadTimeout.
-		ReadTimeout: 30 * time.Minute,
+		ReadTimeout: 90 * time.Minute,
 	})
 
 	// Порядок структурно важен: requestid -> InjectRequestID -> recover -> cors.

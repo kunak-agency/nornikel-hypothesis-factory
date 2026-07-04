@@ -20,10 +20,10 @@ type PyworkerClient struct {
 }
 
 func NewPyworkerClient(baseURL string) *PyworkerClient {
-	// 30 мин: Docling-парсинг больших PDF (layout/OCR-модели на CPU) —
-	// одноразовая стоимость ingestion, не интерактивный запрос; per-query вызовы
+	// 90 мин: OCR больших сканированных книг (400+ страниц) — одноразовая
+	// стоимость ingestion, не интерактивный запрос; per-query вызовы
 	// (embed/rerank) возвращаются за секунды и никогда не приближаются к лимиту.
-	return &PyworkerClient{BaseURL: baseURL, HTTP: &http.Client{Timeout: 30 * time.Minute}}
+	return &PyworkerClient{BaseURL: baseURL, HTTP: &http.Client{Timeout: 90 * time.Minute}}
 }
 
 type IngestChunk struct {

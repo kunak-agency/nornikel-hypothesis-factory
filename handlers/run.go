@@ -174,9 +174,8 @@ func (h *Handler) GetRunGraph(c *fiber.Ctx) error {
 	return c.JSON(out.GraphFromDomain(g))
 }
 
-// loadRunReportData — общая для всех report.* хендлеров последовательность
-// (run → hypotheses → claim sources → evidence sources), которая раньше
-// была скопирована в каждый из 5 хендлеров по отдельности.
+// loadRunReportData — общая для всех report.* хендлеров последовательность:
+// run → hypotheses → claim sources → evidence sources.
 func (h *Handler) loadRunReportData(ctx context.Context, runID string) (*domain.HypothesisRun, []domain.Hypothesis, map[uuid.UUID][]string, error) {
 	run, err := h.services.Pipeline.GetRun(ctx, runID)
 	if err != nil {

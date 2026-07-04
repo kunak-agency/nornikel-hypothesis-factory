@@ -1,19 +1,18 @@
 """
-pyworker: local ingestion + embedding sidecar for the Hypothesis Factory Go service.
+pyworker: локальный сервис ingestion + эмбеддингов для Go-сервиса Hypothesis Factory.
 
-- POST /ingest         : parse PDF/DOCX/XLSX/PPTX/images via Docling, return semantic
-                          chunks (section-aware: headings, paragraphs, tables), not
-                          fixed-size windows.
-- POST /ingest-article : parse a scientific-paper PDF via GROBID (structure-aware:
-                          title/authors/abstract/sections, not OCR-ish text soup),
-                          enrich with Semantic Scholar metadata (citation count, venue,
-                          year) best-effort.
-- POST /embed          : BGE-M3 dense embeddings (multilingual, up to 8192 tokens).
-- POST /rerank          : bge-reranker-v2-m3 cross-encoder scores for a query against candidates.
+- POST /ingest         : парсит PDF/DOCX/XLSX/PPTX/изображения через Docling,
+                          возвращает семантические чанки (по секциям: заголовки,
+                          параграфы, таблицы), а не окна фиксированного размера.
+- POST /ingest-article : парсит PDF научной статьи через GROBID (заголовок/
+                          авторы/аннотация/секции), best-effort обогащение
+                          метаданными Semantic Scholar (цитирования, venue, год).
+- POST /embed           : плотные эмбеддинги BGE-M3 (мультиязычные, до 8192 токенов).
+- POST /rerank          : скоринг bge-reranker-v2-m3 (запрос против кандидатов).
 
-Runs fully offline once models are cached locally (air-gapped deployment) — except
-/ingest-article's Semantic Scholar enrichment step, which is a best-effort network call
-that's skipped (not fatal) if unreachable.
+Работает полностью офлайн, если модели уже в локальном кэше — кроме шага
+обогащения Semantic Scholar в /ingest-article (best-effort сетевой вызов,
+пропускается без падения, если недоступен).
 """
 from __future__ import annotations
 
@@ -37,21 +36,11 @@ _reranker_model = None
 
 
 def get_docling_converter():
-    # Docling's bundled RapidOCR integration (this Docling version, 2.108.0)
-    # only ships "english"/"latin"/"chinese" model sets — there is no
-    # Cyrillic set at all, so passing lang=["ru"] to RapidOcrOptions still
-    # silently falls back to the default (Chinese) recognizer on Russian
-    # scans, which is what this codebase did for months: every scanned book
-    # ingested through the default DocumentConverter() got Chinese OCR run
-    # against Cyrillic glyphs, producing near-total noise (digits/punctuation/
-    # stray Latin letters instead of words) — confirmed by inspecting ingested
-    # chunk content for Поваров/Андреев/Богданов/Генкин/Мещеряков/Комлев.
-    # EasyOCR does ship a Russian recognition model, so it replaces RapidOCR
-    # here. force_full_page_ocr=True additionally means Docling always runs
-    # this OCR pass itself rather than trusting any embedded text layer the
-    # source PDF might already carry (geokniga.org/DJVU-converted scans can
-    # ship their own low-quality, non-Cyrillic-aware embedded text layer,
-    # which Docling would otherwise prefer over its own OCR when present).
+    # У встроенного в Docling RapidOCR нет модели для кириллицы (только
+    # english/latin/chinese) — на русских сканах он тихо откатывается на
+    # китайскую. EasyOCR даёт настоящую русскую модель. force_full_page_ocr=True,
+    # чтобы Docling не доверял низкокачественному встроенному текстовому слою
+    # некоторых сканов.
     global _docling_converter
     if _docling_converter is None:
         from docling.datamodel.base_models import InputFormat
@@ -59,32 +48,23 @@ def get_docling_converter():
         from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling.models.stages.ocr.easyocr_model import EasyOcrModel
 
-        # EasyOcrModel hardcodes self.scale = 3 (216 DPI) for the page bitmap
-        # it feeds to EasyOCR's CRAFT detector — not exposed via
-        # EasyOcrOptions at all. With force_full_page_ocr=True every page
-        # goes through this at full page size (~1787x2526px for A4), and
-        # that resolution is what was hitting the same ~11.6GB ceiling
-        # regardless of how many pages were in a batch (even a single fresh
-        # 20-page sub-document OOM'd identically) — the memory pressure is
-        # per-page-bitmap-size, not cumulative across pages. Halving the
-        # linear scale quarters the pixel count the detector has to process.
+        # EasyOcrModel жёстко фиксирует self.scale = 3 (216 DPI) для растра
+        # OCR — не настраивается через EasyOcrOptions. Одного этого разрешения
+        # хватало, чтобы упереться в GPU OOM на каждой странице независимо от
+        # размера документа. Уменьшение вдвое даёт вчетверо меньше пикселей.
         _original_easyocr_init = EasyOcrModel.__init__
 
         def _patched_easyocr_init(self, *args, **kwargs):
             _original_easyocr_init(self, *args, **kwargs)
-            self.scale = 1.5  # 108 DPI — still well above what OCR needs for printed text
+            self.scale = 1.5  # 108 DPI
 
         EasyOcrModel.__init__ = _patched_easyocr_init
 
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
         pipeline_options.ocr_options = EasyOcrOptions(lang=["ru", "en"], force_full_page_ocr=True)
-        # Docling's default ocr_batch_size=4 feeds 4 page images through
-        # EasyOCR's CRAFT detector in one tensor batch; on a scan with larger/
-        # denser pages that single batch can demand ~10GB in one allocation
-        # (observed: "HIP out of memory. Tried to allocate 9.72 GiB" on a book
-        # that otherwise fits the 12GB card fine page-by-page). One page per
-        # OCR call trades some throughput for actually fitting in memory.
+        # ocr_batch_size=4 по умолчанию батчит 4 растра страниц в один тензор,
+        # что на плотных сканах может потребовать ~10GB одним выделением.
         pipeline_options.ocr_batch_size = 1
         _docling_converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
@@ -93,18 +73,17 @@ def get_docling_converter():
 
 
 def get_bge_model():
-    # sentence-transformers, not FlagEmbedding: FlagEmbedding 1.3.4 eagerly
-    # imports decoder-only (Gemma-based) reranker code at import time that
-    # breaks against current transformers internals, even though we only
-    # need the encoder-only BGE-M3/bge-reranker-v2-m3 models.
+    # sentence-transformers, не FlagEmbedding: FlagEmbedding 1.3.4 при импорте
+    # эагерно подтягивает decoder-only (Gemma) код реранкера, который ломается
+    # об текущий transformers — хотя нужны только encoder-only BGE-M3/
+    # bge-reranker-v2-m3.
     global _bge_model
     if _bge_model is None:
         from sentence_transformers import SentenceTransformer
         _bge_model = SentenceTransformer("BAAI/bge-m3")
-        # sentence-transformers defaults BGE-M3 to a 512-token max_seq_length
-        # (from its saved ST config), silently truncating well below the
-        # model's actual trained 8192-token context — a real loss for long
-        # regulation/textbook chunks. Use the full context it supports.
+        # sentence-transformers по умолчанию ставит BGE-M3 max_seq_length=512
+        # (из сохранённого ST-конфига), обрезая далеко ниже реального
+        # обученного контекста модели в 8192 токена.
         _bge_model.max_seq_length = 8192
     return _bge_model
 
@@ -130,13 +109,12 @@ class IngestResponse(BaseModel):
 
 
 def fix_degenerate_single_column_table(text: str) -> str:
-    """Docling's TableFormer treats a single-column Word table (a plain
-    bulleted list rendered as a bordered table, e.g. brainstormed hypothesis
-    lists) as having row 0 as a header, then HybridChunker's table serializer
-    repeats "header = row" for every subsequent row: "2. X = 3. Y. 2. X = 4. Z."
-    That's unusable for claim extraction. Detect the repeating-prefix pattern
-    and reconstruct the original list instead.
-    """
+    """TableFormer принимает однокоронную Word-таблицу (обычный маркированный
+    список в рамке таблицы) за таблицу с заголовком в первой строке, и
+    сериализатор HybridChunker повторяет "заголовок = строка" для каждой
+    последующей строки ("2. X = 3. Y. 2. X = 4. Z.") — непригодно для claim
+    extraction. Распознаёт повторяющийся префикс и восстанавливает исходный
+    список."""
     if text.count(" = ") < 2:
         return text
     parts = text.split(" = ")
@@ -154,8 +132,8 @@ def fix_degenerate_single_column_table(text: str) -> str:
             item = p.rstrip(" .")
         if item:
             items.append(item)
-    # Only trust the reconstruction if it actually recovered multiple distinct
-    # items — otherwise this wasn't the degenerate pattern, leave text as-is.
+    # Доверяем реконструкции только если восстановилось несколько разных
+    # элементов — иначе это не тот паттерн, оставляем текст как есть.
     if len(items) < 2 or len(set(items)) < len(items) - 1:
         return text
     return header + "\n" + "\n".join(items)
@@ -165,13 +143,12 @@ _LETTER_SPACING_RE = re.compile(r"(?:\b\w\b[ \-]+){3,}\b\w\b", re.UNICODE)
 
 
 def fix_letter_spacing(text: str) -> str:
-    """Docling/OCR occasionally extracts text from wide-tracking table/heading
-    layouts as a run of single-letter "words" ("Э м и с с и о н н о - р а д
-    и о м е т р и ч е с к и е" instead of "Эмиссионно-радиометрические").
-    Collapse any run of 4+ single-character tokens separated by spaces/hyphens
-    back into one word; short real words ("и", "о", "в") are untouched since
-    they never appear in a run of 4+.
-    """
+    """Docling/OCR иногда извлекает текст из широко разряженных заголовков/
+    таблиц как последовательность однобуквенных "слов" ("Э м и с с и о н н
+    о-р а д и о м е т р и ч е с к и е" вместо "Эмиссионно-радиометрические").
+    Схлопывает пробегы из 4+ однобуквенных токенов обратно в слово; короткие
+    настоящие слова ("и", "о", "в") не трогает — они не встречаются в
+    пробегах длиной 4+."""
 
     def collapse(m: re.Match) -> str:
         return re.sub(r"[ \-]+", "", m.group(0))
@@ -180,13 +157,11 @@ def fix_letter_spacing(text: str) -> str:
 
 
 def _table_markdown(doc, chunk) -> str | None:
-    """HybridChunker's default table serializer produces triplet text
-    ("row = col = value") that severs a table from the row/column semantics a
-    reader (or an LLM doing claim extraction) needs. TableItem.export_to_markdown
-    keeps the grid structure instead, which grounds claims far better.
-    Returns None if the chunk has no table doc_items (caller falls back to the
-    HybridChunker serialization).
-    """
+    """Сериализатор таблиц по умолчанию в HybridChunker даёт тройки
+    "строка = столбец = значение", теряющие структуру строк/столбцов, нужную
+    для grounding. TableItem.export_to_markdown сохраняет сетку таблицы.
+    Возвращает None, если в чанке нет табличных doc_items (тогда вызывающая
+    сторона откатывается на сериализацию HybridChunker)."""
     from docling_core.types.doc import TableItem
 
     meta = getattr(chunk, "meta", None)
@@ -201,18 +176,10 @@ def _table_markdown(doc, chunk) -> str | None:
 
 
 def _release_gpu_memory() -> None:
-    """Docling's per-document conversion (layout/table/OCR models running
-    over every page) and BGE-M3/reranker batches leave PyTorch's caching
-    allocator holding variable-sized blocks that often can't be reused for
-    the next call's different tensor shapes — across a long-running
-    container ingesting many large books back to back (thousands of pages
-    in a single session), this fragmentation accumulates until a request
-    that would easily fit in the 12GB card OOMs anyway ("9.81 GiB allocated
-    ... tried to allocate 1.12 GiB"). gc.collect() first so any Python-side
-    references to page images/tensors from the just-finished call are
-    actually dropped before empty_cache() hands the freed blocks back to
-    the allocator's free pool.
-    """
+    """Сбрасывает закэшированные блоки аллокатора PyTorch после каждого
+    документа/батча, чтобы фрагментация не копилась в долгоживущем
+    контейнере. Сначала gc.collect(), чтобы Python-ссылки на тензоры реально
+    освободились до того, как empty_cache() их заберёт."""
     import gc
 
     import torch
@@ -225,13 +192,8 @@ def _release_gpu_memory() -> None:
 def _ingest_sync(tmp_path: str, filename: str) -> list[Chunk]:
     from docling.chunking import HybridChunker
 
-    # converter.convert() itself — not just the chunking loop below — is
-    # where OCR/layout models actually run and where OOM has been observed
-    # ("HIP out of memory ... Tried to allocate 9.72 GiB" inside convert()).
-    # The whole function used to only wrap the chunking loop in try/finally,
-    # so a convert() failure skipped _release_gpu_memory() entirely and left
-    # that GPU memory unrecoverable for every subsequent document in the
-    # same long-running container — exactly the scenario this fix targets.
+    # Сам convert() (не только цикл чанкинга) должен быть внутри try/finally —
+    # именно там работают OCR/layout-модели и происходит OOM.
     result = None
     doc = None
     try:
@@ -292,9 +254,9 @@ _TEI_NS = {"t": "http://www.tei-c.org/ns/1.0"}
 
 
 def _tei_text(el) -> str:
-    """Join all text content under an element, collapsing whitespace — TEI
-    wraps inline elements (refs, formulas) inside <p>, plain itertext() is
-    good enough for claim-extraction purposes (we don't need the markup)."""
+    """Склеивает весь текст под элементом, схлопывая пробелы — TEI оборачивает
+    инлайн-элементы (ссылки, формулы) внутри <p>, для claim extraction
+    достаточно голого itertext()."""
     return re.sub(r"\s+", " ", "".join(el.itertext())).strip()
 
 
@@ -303,14 +265,13 @@ _HARD_PARA_CAP = 4000
 
 
 def _group_paragraphs(paragraphs: list[str]) -> list[str]:
-    """Groups consecutive paragraphs up to ~_CHUNK_CHAR_BUDGET chars each —
-    an unbounded whole-<div>-per-chunk (a single GROBID section can run to
-    10k+ chars in a long paper) blows up embedding attention memory
-    (quadratic in sequence length) even within BGE-M3's nominal 8192-token
-    window. Never splits a paragraph mid-sentence, except the (rare) single
-    paragraph that alone exceeds _HARD_PARA_CAP, which is whitespace-sliced
-    as a last resort so one runaway paragraph can't OOM the batch either.
-    """
+    """Группирует последовательные параграфы до ~_CHUNK_CHAR_BUDGET символов —
+    неограниченный чанк на весь <div> (одна секция GROBID может быть 10k+
+    символов в длинной статье) раздувает память attention при эмбеддинге
+    (квадратично по длине последовательности) даже в пределах номинального
+    окна BGE-M3 в 8192 токена. Никогда не режет параграф посередине
+    предложения, кроме редкого случая, когда один параграф сам превышает
+    _HARD_PARA_CAP — тогда режется по пробелам как крайняя мера."""
     groups: list[str] = []
     current: list[str] = []
     current_len = 0
@@ -340,14 +301,13 @@ def _group_paragraphs(paragraphs: list[str]) -> list[str]:
 
 
 def _parse_tei_to_chunks(tei_xml: str, filename: str) -> tuple[list[Chunk], dict]:
-    """Turns GROBID's TEI XML into the same Chunk shape /ingest produces, so
-    downstream (Go-side claim extraction, parent-child neighbor context) needs
-    no article-specific handling. One chunk per <div> section (GROBID already
-    segments by heading — no need for Docling's HybridChunker here) plus one
-    abstract chunk. Returns (chunks, header_metadata) — header_metadata (title/
-    authors/year) is attached to every chunk so claim extraction can cite the
-    paper by name even from a body chunk.
-    """
+    """Превращает TEI XML от GROBID в тот же формат Chunk, что и /ingest, —
+    downstream (claim extraction на Go, parent-child контекст соседей) не
+    нуждается в отдельной обработке статей. Один чанк на секцию <div>
+    (GROBID уже сегментирует по заголовкам) плюс чанк аннотации. Возвращает
+    (chunks, header_metadata) — header_metadata (title/authors/year)
+    прикрепляется к каждому чанку, чтобы claim extraction могла процитировать
+    статью по имени даже из чанка основного текста."""
     root = ET.fromstring(tei_xml)
 
     title_el = root.find(".//t:teiHeader//t:titleStmt/t:title", _TEI_NS)
@@ -400,11 +360,10 @@ def _parse_tei_to_chunks(tei_xml: str, filename: str) -> tuple[list[Chunk], dict
 
 
 def _semantic_scholar_enrich(title: str) -> dict:
-    """Best-effort authority signal (citation count, venue, year) for a paper
-    by title search — not required for the pipeline to work, so any failure
-    (network, rate limit, no match) is swallowed and just yields no enrichment
-    rather than failing the whole ingest.
-    """
+    """Best-effort сигнал авторитетности (цитирования, venue, год) по поиску
+    названия статьи — не обязателен для пайплайна, любая неудача (сеть,
+    rate limit, нет совпадения) молча даёт пустое обогащение, не роняя
+    ingestion."""
     if not title:
         return {}
     try:
@@ -430,10 +389,8 @@ def _semantic_scholar_enrich(title: str) -> dict:
             enrichment["s2_doi"] = doi
         return enrichment
     except Exception as e:
-        # Best-effort: don't fail ingestion over a flaky/rate-limited external
-        # API, but do log it — a silent except here previously made a 429 from
-        # Semantic Scholar's tight anonymous rate limit indistinguishable from
-        # "no matching paper found".
+        # Best-effort: логируем, но не роняем ingestion из-за нестабильного/
+        # rate-limited внешнего API.
         print(f"[semantic_scholar_enrich] skipped for {title!r}: {e}")
         return {}
 
@@ -461,8 +418,8 @@ def _ingest_article_sync(tmp_path: str, filename: str) -> list[Chunk]:
 
 @app.post("/ingest-article", response_model=IngestResponse)
 async def ingest_article(file: UploadFile = File(...)):
-    # Same event-loop-blocking concern as /ingest: the GROBID HTTP call plus
-    # XML parsing runs in a worker thread so /healthz stays responsive.
+    # asyncio.to_thread — вызов GROBID и парсинг XML в отдельном потоке,
+    # чтобы /healthz оставался отзывчивым.
     suffix = Path(file.filename or "upload").suffix or ".pdf"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(await file.read())
@@ -471,22 +428,18 @@ async def ingest_article(file: UploadFile = File(...)):
     try:
         chunks = await asyncio.to_thread(_ingest_article_sync, tmp_path, file.filename)
     finally:
-        # delete=False above is required (Docling/GROBID need a real path to
-        # open, not just an fd) — without an explicit cleanup here, every
-        # ingested article leaves its upload behind in the container's temp
-        # dir forever, eventually filling the disk on a long ingestion run.
+        # delete=False выше обязателен (Docling/GROBID нужен реальный путь,
+        # не просто fd) — без явной очистки здесь временный файл остаётся
+        # в контейнере навсегда.
         os.unlink(tmp_path)
     return IngestResponse(chunks=chunks)
 
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest(file: UploadFile = File(...)):
-    # Docling conversion is synchronous, CPU/GPU-bound work that can run for
-    # tens of minutes on a large book. Running it directly in this async def
-    # blocks FastAPI's single event loop for the whole duration — even
-    # /healthz stops responding, and every other in-flight request queues
-    # behind it. asyncio.to_thread offloads it to a worker thread so the
-    # event loop stays free to serve concurrent requests.
+    # Конвертация Docling — синхронная CPU/GPU-работа, может идти десятки
+    # минут на большой книге; asyncio.to_thread выносит её в отдельный поток,
+    # чтобы не блокировать единственный event loop FastAPI.
     suffix = Path(file.filename or "upload").suffix or ".bin"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(await file.read())
@@ -508,13 +461,9 @@ class EmbedResponse(BaseModel):
 
 
 def _embed_sync(texts: list[str]) -> list[list[float]]:
-    # batch_size=12 at the model's full 8192-token max_seq_length repeatedly
-    # OOM'd on large books (11.98 GiB GPU shared with Docling/RapidOCR, which
-    # alone hold ~8.3 GiB resident): a batch of long chunks can attempt a
-    # single ~5 GiB allocation. Retry with a shrinking batch size on OOM
-    # instead of failing the whole document — worst case (batch_size=1) is
-    # slower but always fits, and empty_cache() between attempts releases
-    # whatever fragmented memory the previous attempt's partial allocation left.
+    # Ретрай с уменьшающимся batch_size при GPU OOM вместо падения всего
+    # запроса — крупный батч длинных чанков на полном контексте BGE-M3
+    # (8192 токена) может потребовать однократное выделение в несколько GB.
     import torch
 
     for batch_size in (12, 4, 1):
@@ -527,10 +476,6 @@ def _embed_sync(texts: list[str]) -> list[list[float]]:
             if batch_size == 1:
                 raise
         finally:
-            # Same accumulating-fragmentation reasoning as _release_gpu_memory
-            # (see there) — embed runs on every /runs query, not just
-            # ingestion, so this keeps the allocator tidy for the long-running
-            # runtime container too, not just the one-off ingestion tool.
             torch.cuda.empty_cache()
     raise AssertionError("unreachable")
 

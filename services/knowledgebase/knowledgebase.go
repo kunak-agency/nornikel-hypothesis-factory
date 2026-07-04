@@ -65,10 +65,9 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (int, error) {
 	// чанков или с частью чанков, которые пользователь не может отличить
 	// от полноценного документа при повторной загрузке того же файла.
 	rollbackDocument := func() {
-		// Best-effort: если сам rollback тоже упадёт, orphan-Document
-		// остаётся обнаружимым и вручную чистимым (как делалось в этой
-		// сессии не раз) — заводить отдельный errs.ErrType ради этого не
-		// стоит, исходная ошибка ingest/embed важнее для вызывающей стороны.
+		// Best-effort: если сам rollback упадёт, orphan-Document остаётся
+		// обнаружимым и вручную чистимым — не заводим отдельный errs.ErrType
+		// ради этого, исходная ошибка ingest/embed важнее для вызывающей стороны.
 		_, _ = s.repos.Documents.Delete(ctx, doc.ID)
 	}
 

@@ -1,14 +1,14 @@
 """
-pyworker: runtime embedding/reranking sidecar for the Hypothesis Factory Go
-service — the part of the pipeline that runs on every POST /v1/runs query.
+pyworker: runtime-сервис эмбеддингов/реранкинга для Go-сервиса Hypothesis
+Factory — часть пайплайна, которая выполняется на каждый запрос POST /v1/runs.
 
-- POST /embed   : BGE-M3 dense embeddings (multilingual, up to 8192 tokens).
-- POST /rerank  : bge-reranker-v2-m3 cross-encoder scores for a query against candidates.
+- POST /embed   : плотные эмбеддинги BGE-M3 (мультиязычные, до 8192 токенов).
+- POST /rerank  : скоринг bge-reranker-v2-m3 (запрос против кандидатов).
 
-Deliberately does NOT include Docling/ingestion — that's a heavy, one-off
-offline job with its own GPU-accelerated tool (tools/ingestion), never part
-of the submitted solution's runtime footprint. The knowledge base ships as a
-pre-built Postgres dump; this service only serves live queries against it.
+Намеренно не включает Docling/ingestion — это тяжёлая, разовая офлайн-задача
+со своим GPU-инструментом (tools/ingestion), не часть runtime-профиля сдаваемого
+решения. База знаний поставляется как готовый дамп Postgres; этот сервис
+только обслуживает живые запросы к ней.
 """
 from __future__ import annotations
 
@@ -24,18 +24,17 @@ _reranker_model = None
 
 
 def get_bge_model():
-    # sentence-transformers, not FlagEmbedding: FlagEmbedding 1.3.4 eagerly
-    # imports decoder-only (Gemma-based) reranker code at import time that
-    # breaks against current transformers internals, even though we only
-    # need the encoder-only BGE-M3/bge-reranker-v2-m3 models.
+    # sentence-transformers, не FlagEmbedding: FlagEmbedding 1.3.4 при импорте
+    # эагерно подтягивает decoder-only (Gemma) код реранкера, который ломается
+    # об текущий transformers — хотя нужны только encoder-only BGE-M3/
+    # bge-reranker-v2-m3.
     global _bge_model
     if _bge_model is None:
         from sentence_transformers import SentenceTransformer
         _bge_model = SentenceTransformer("BAAI/bge-m3")
-        # sentence-transformers defaults BGE-M3 to a 512-token max_seq_length
-        # (from its saved ST config), silently truncating well below the
-        # model's actual trained 8192-token context — must match the
-        # ingestion tool's setting or query/document vectors diverge.
+        # sentence-transformers по умолчанию ставит BGE-M3 max_seq_length=512
+        # (из сохранённого ST-конфига) — должно совпадать с настройкой
+        # ingestion-инструмента, иначе векторы запроса/документа разъезжаются.
         _bge_model.max_seq_length = 8192
     return _bge_model
 
@@ -57,10 +56,8 @@ class EmbedResponse(BaseModel):
 
 
 def _embed_sync(texts: list[str]) -> list[list[float]]:
-    # Retry with a shrinking batch size on GPU OOM instead of failing the
-    # request outright — see tools/ingestion/main.py for the same fix and
-    # why (long chunks at the model's 8192-token max_seq_length can attempt
-    # a multi-GiB single allocation).
+    # Ретрай с уменьшающимся batch_size при GPU OOM вместо падения запроса —
+    # см. tools/ingestion/main.py, тот же фикс и причина.
     import torch
 
     for batch_size in (12, 4, 1):
@@ -73,19 +70,14 @@ def _embed_sync(texts: list[str]) -> list[list[float]]:
             if batch_size == 1:
                 raise
         finally:
-            # A caching allocator doesn't return freed blocks to the OS/driver
-            # by default; across many queries with different batch/sequence
-            # shapes those blocks can fragment until an allocation that would
-            # easily fit fails anyway. Cheap relative to a whole embed call.
             torch.cuda.empty_cache()
     raise AssertionError("unreachable")
 
 
 @app.post("/embed", response_model=EmbedResponse)
 async def embed(req: EmbedRequest):
-    # asyncio.to_thread keeps the event loop free (e.g. /healthz responsive)
-    # while the model runs — a single query embedding is fast, but this
-    # avoids reintroducing the blocking-event-loop bug under concurrent load.
+    # asyncio.to_thread — держит event loop свободным (/healthz отзывчив),
+    # пока модель работает.
     embeddings = await asyncio.to_thread(_embed_sync, req.texts)
     return EmbedResponse(embeddings=embeddings)
 

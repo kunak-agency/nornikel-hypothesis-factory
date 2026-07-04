@@ -2,9 +2,8 @@ package hypothesisfactory
 
 import "github.com/google/uuid"
 
-// uniqueUUIDs dedupes and flattens any number of UUID slices — the shared
-// body of "collect referenced IDs into a set, then a slice for a GetByIDs
-// call" that recurs across entity/claim lookups (loadEntityReputations,
+// uniqueUUIDs дедуплицирует и разворачивает любое число UUID-срезов — общая
+// логика "собрать ID в набор, затем в срез для GetByIDs" (loadEntityReputations,
 // GetClaimSources, BuildRunGraph).
 func uniqueUUIDs(idLists ...[]uuid.UUID) []uuid.UUID {
 	seen := make(map[uuid.UUID]struct{})

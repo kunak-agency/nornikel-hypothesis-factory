@@ -38,8 +38,7 @@ func BuildEvidenceSources(hyps []domain.Hypothesis, claimsByID map[uuid.UUID]dom
 }
 
 // formatSourceLabel строит человекочитаемую ссылку из метаданных claim'а:
-// "Заголовок (авторы, год[, издание])" — то, чего не хватало в отчёте до
-// сих пор (authors/year собирались при ingestion, но никуда не долетали).
+// "Заголовок (авторы, год[, издание])".
 func formatSourceLabel(meta map[string]any) string {
 	title, _ := meta["document_title"].(string)
 	if title == "" {

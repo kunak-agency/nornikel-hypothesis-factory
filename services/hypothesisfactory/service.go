@@ -26,11 +26,9 @@ func NewService(repos *repositories.Repos, llm externalApi.LLMClient, pyworker *
 	return &Service{repos: repos, llm: llm, pyworker: pyworker, topK: 15}
 }
 
-// StartRunOptions — то, что раньше было захардкожено на уровне Service
-// (единственный домен "flotation") или вообще не настраивалось (язык
-// вывода, веса ранжирования) — теперь параметры конкретного прогона, не
-// сервиса: разные вызовы могут работать с разными предметными областями и
-// разными приоритетами ранжирования без передеплоя.
+// StartRunOptions — параметры конкретного прогона (не сервиса): разные
+// вызовы могут работать с разными предметными областями и приоритетами
+// ранжирования без передеплоя.
 type StartRunOptions struct {
 	Domain         string
 	Language       string

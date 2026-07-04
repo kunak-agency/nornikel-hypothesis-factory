@@ -61,10 +61,8 @@ const parentContextRadius = 1
 
 // extractClaims извлекает claims по каждому retrieved-чанку конкурентно
 // (ограниченно), не последовательно — N чанков стоит ~1 LLM round-trip по
-// времени, а не N. Требуется, чтобы уложиться в "минуты, не часы". Parent-
-// контекст для ВСЕХ чанков поднимается одним batched-запросом заранее — раньше
-// каждая горутина сама дёргала GetNeighbors, N отдельных round-trip'ов к БД
-// вместо одного.
+// времени, а не N. Parent-контекст для всех чанков поднимается одним
+// batched-запросом заранее (см. buildParentContexts), а не по одному на горутину.
 func extractClaims(ctx context.Context, client externalApi.LLMClient, chunkRepo *repositories.ChunkRepo, chunks []domain.RetrievedChunk) []domain.Claim {
 	parentContents := buildParentContexts(ctx, chunkRepo, chunks)
 
@@ -91,14 +89,9 @@ func extractClaims(ctx context.Context, client externalApi.LLMClient, chunkRepo 
 }
 
 // buildParentContexts стягивает каждый retrieved-чанк с его непосредственными
-// соседями (тот же документ, ordinal±parentContextRadius) в один блок текста
-// — Docling эмитит table-чанк и поясняющий его текст как соседние ordinal
-// (даже когда HybridChunker.merge_peers не смог их слить из-за разных
-// heading), так что более широкий parent-контекст даёт claim extraction
-// шанс процитировать дословно то, что физически лежит в соседнем чанке.
-// Один batched-запрос вместо одного GetNeighbors на чанк; при ошибке батча
-// падает обратно на chunk.Content для всех чанков разом (child-only
-// extraction хуже, но не хуже, чем было раньше).
+// соседями (тот же документ, ordinal±parentContextRadius, см. выше) в один
+// блок текста одним batched-запросом; при ошибке батча падает обратно на
+// chunk.Content для всех чанков разом.
 func buildParentContexts(ctx context.Context, chunkRepo *repositories.ChunkRepo, chunks []domain.RetrievedChunk) []string {
 	out := make([]string, len(chunks))
 	if len(chunks) == 0 {
@@ -251,19 +244,14 @@ func extractClaimsFromChunk(ctx context.Context, client externalApi.LLMClient, c
 	return claims
 }
 
-// groundingOverlapThreshold — порог word-overlap для isGrounded. Раньше был
-// 0.7: отбрасывал не только галлюцинации, но и настоящие цитаты, которые
-// LLM слегка перефразировала (склеила два предложения, поправила пунктуацию,
-// зацепила letter-spacing-фикс) — то есть резал не только явную дичь, а
-// заодно и правдоподобные пограничные случаи. 0.6 — компромисс: цитата, где
-// большинство слов реально из источника, считается заземлённой; ниже
-// половины слов — это уже больше выдумано, чем процитировано, отбрасываем.
+// groundingOverlapThreshold — минимальная доля слов цитаты, реально
+// присутствующих в источнике; ниже — цитата считается галлюцинированной.
+// 0.6, не выше: более строгий порог резал и настоящие цитаты, слегка
+// перефразированные LLM (склеенные предложения, поправленная пунктуация).
 const groundingOverlapThreshold = 0.6
 
-// isGrounded проверяет, что цитата реально прослеживается до исходного
-// чанка: точное вхождение после нормализации, либо word-overlap >=
-// groundingOverlapThreshold. Ниже порога цитата считается недостоверной/
-// галлюцинированной.
+// isGrounded — точное вхождение после нормализации, либо word-overlap >=
+// groundingOverlapThreshold.
 func isGrounded(quote, sourceContent string) bool {
 	quote = strings.TrimSpace(quote)
 	if quote == "" {

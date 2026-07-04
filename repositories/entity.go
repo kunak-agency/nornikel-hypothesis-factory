@@ -66,11 +66,9 @@ type FeedbackStats struct {
 // GetFeedbackStats — "обучение на фидбэке" через граф памяти: entity уже
 // резолвится между прогонами (embedding similarity dedup в
 // services/hypothesisfactory/entities.go), так что достаточно поднять
-// историю подтверждений/отклонений по entity_id — не нужен отдельный лог
-// "похожих гипотез", граф уже несёт эту связь через claims->hypotheses->
-// feedback. Джойнит entities прямо здесь за CanonicalName — раньше вызывающая
-// сторона (loadEntityReputations) делала для этого отдельный GetByIDs,
-// второй sequential round-trip на то же множество ID.
+// историю подтверждений/отклонений по entity_id через claims->hypotheses->
+// feedback. Джойнит entities здесь же за CanonicalName, чтобы не делать
+// отдельный GetByIDs вторым round-trip'ом на то же множество ID.
 func (r *EntityRepo) GetFeedbackStats(ctx context.Context, entityIDs []uuid.UUID) ([]FeedbackStats, error) {
 	if len(entityIDs) == 0 {
 		return nil, nil
