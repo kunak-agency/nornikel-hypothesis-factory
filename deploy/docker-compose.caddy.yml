@@ -13,15 +13,9 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-      - pyworker
     ports:
       - "80:80"
       - "443:443"
-    # env_file (not ${..} interpolation): the bcrypt hash contains '$' which the
-    # compose interpolator would mangle; env_file passes values verbatim, and the
-    # Caddyfile reads {$EMBEDDINGS_PW_HASH} from the container environment.
-    env_file:
-      - .env
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
