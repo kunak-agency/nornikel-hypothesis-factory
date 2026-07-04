@@ -57,6 +57,24 @@ def get_docling_converter():
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
         from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.models.stages.ocr.easyocr_model import EasyOcrModel
+
+        # EasyOcrModel hardcodes self.scale = 3 (216 DPI) for the page bitmap
+        # it feeds to EasyOCR's CRAFT detector — not exposed via
+        # EasyOcrOptions at all. With force_full_page_ocr=True every page
+        # goes through this at full page size (~1787x2526px for A4), and
+        # that resolution is what was hitting the same ~11.6GB ceiling
+        # regardless of how many pages were in a batch (even a single fresh
+        # 20-page sub-document OOM'd identically) — the memory pressure is
+        # per-page-bitmap-size, not cumulative across pages. Halving the
+        # linear scale quarters the pixel count the detector has to process.
+        _original_easyocr_init = EasyOcrModel.__init__
+
+        def _patched_easyocr_init(self, *args, **kwargs):
+            _original_easyocr_init(self, *args, **kwargs)
+            self.scale = 1.5  # 108 DPI — still well above what OCR needs for printed text
+
+        EasyOcrModel.__init__ = _patched_easyocr_init
 
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
