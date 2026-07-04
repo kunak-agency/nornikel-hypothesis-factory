@@ -17,6 +17,14 @@ func (r *PlantEquipmentRepo) Create(ctx context.Context, e *domain.PlantEquipmen
 	return r.db.WithContext(ctx).Create(e).Error
 }
 
+// DeleteByPlantName удаляет все строки конкретной фабрики — используется
+// сидером (cmd/seed-plant-equipment) для реальной идемпотентности повторного
+// запуска (clear-then-reload), а не только по заявлению в его шапке.
+func (r *PlantEquipmentRepo) DeleteByPlantName(ctx context.Context, plantName string) (int64, error) {
+	res := r.db.WithContext(ctx).Where("plant_name = ?", plantName).Delete(&domain.PlantEquipment{})
+	return res.RowsAffected, res.Error
+}
+
 // FindByPlantMention ищет оборудование, чьё PlantName или один из Aliases
 // упоминается (case-insensitive substring) в свободном тексте (обычно —
 // ProblemSpec.Plant). Таблица маленькая (десятки строк на фабрику) — простой

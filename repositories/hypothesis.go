@@ -17,6 +17,15 @@ func (r *HypothesisRepo) Create(ctx context.Context, h *domain.Hypothesis) error
 	return r.db.WithContext(ctx).Create(h).Error
 }
 
+// CreateBatch вставляет все гипотезы прогона одним batched INSERT вместо
+// одного round-trip'а на гипотезу (обычно 5-10 за прогон).
+func (r *HypothesisRepo) CreateBatch(ctx context.Context, hyps []domain.Hypothesis) error {
+	if len(hyps) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).CreateInBatches(hyps, 50).Error
+}
+
 func (r *HypothesisRepo) GetByRunID(ctx context.Context, runID uuid.UUID) ([]domain.Hypothesis, error) {
 	var out []domain.Hypothesis
 	err := r.db.WithContext(ctx).Where("run_id = ?", runID).Order("rank ASC").Find(&out).Error

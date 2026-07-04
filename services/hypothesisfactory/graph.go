@@ -50,35 +50,27 @@ func (s *Service) BuildRunGraph(ctx context.Context, runIDStr string) (Graph, er
 		return Graph{}, errs.Wrap(err, errs.ErrTypeInternal, "get hypotheses")
 	}
 
-	claimIDSet := make(map[uuid.UUID]struct{})
+	var refLists [][]uuid.UUID
 	for _, h := range hyps {
-		for _, ref := range h.EvidenceRefs {
-			claimIDSet[ref] = struct{}{}
-		}
+		refLists = append(refLists, h.EvidenceRefs)
 	}
-	claimIDs := make([]uuid.UUID, 0, len(claimIDSet))
-	for id := range claimIDSet {
-		claimIDs = append(claimIDs, id)
-	}
+	claimIDs := uniqueUUIDs(refLists...)
 
 	claims, err := s.repos.Claims.GetByIDs(ctx, claimIDs)
 	if err != nil {
 		return Graph{}, errs.Wrap(err, errs.ErrTypeInternal, "get claims")
 	}
 
-	entityIDSet := make(map[uuid.UUID]struct{})
+	var subjectIDs, metricIDs []uuid.UUID
 	for _, c := range claims {
 		if c.SubjectEntityID != nil {
-			entityIDSet[*c.SubjectEntityID] = struct{}{}
+			subjectIDs = append(subjectIDs, *c.SubjectEntityID)
 		}
 		if c.MetricEntityID != nil {
-			entityIDSet[*c.MetricEntityID] = struct{}{}
+			metricIDs = append(metricIDs, *c.MetricEntityID)
 		}
 	}
-	entityIDs := make([]uuid.UUID, 0, len(entityIDSet))
-	for id := range entityIDSet {
-		entityIDs = append(entityIDs, id)
-	}
+	entityIDs := uniqueUUIDs(subjectIDs, metricIDs)
 	entities, err := s.repos.Entities.GetByIDs(ctx, entityIDs)
 	if err != nil {
 		return Graph{}, errs.Wrap(err, errs.ErrTypeInternal, "get entities")

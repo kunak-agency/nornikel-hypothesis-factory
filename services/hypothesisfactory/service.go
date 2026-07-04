@@ -216,10 +216,8 @@ func (s *Service) runPipeline(ctx context.Context, run *domain.HypothesisRun) er
 	}
 	claims := extractClaims(ctx, s.llm, s.repos.Chunks, chunks)
 	resolveEntities(ctx, s.repos.Entities, s.pyworker, claims)
-	for i := range claims {
-		if err := s.repos.Claims.Create(ctx, &claims[i]); err != nil {
-			return fmt.Errorf("persist claim: %w", err)
-		}
+	if err := s.repos.Claims.CreateBatch(ctx, claims); err != nil {
+		return fmt.Errorf("persist claims: %w", err)
 	}
 
 	// "Выявление пробелов в знаниях" из функциональных требований —
@@ -255,14 +253,16 @@ func (s *Service) runPipeline(ctx context.Context, run *domain.HypothesisRun) er
 	}
 	hyps = critique(ctx, s.llm, run.ProblemSpec, claimByID, hyps, run.Language, run.RankingWeights)
 
-	for i := range hyps {
-		if err := s.repos.Hypotheses.Create(ctx, &hyps[i]); err != nil {
-			return fmt.Errorf("persist hypothesis: %w", err)
-		}
+	if err := s.repos.Hypotheses.CreateBatch(ctx, hyps); err != nil {
+		return fmt.Errorf("persist hypotheses: %w", err)
 	}
 
+	// Не фатально: гипотезы уже закоммичены строкой выше — если бы эта
+	// ошибка проваливала весь прогон, клиент увидел бы status=failed и мог
+	// бы никогда не отрендерить уже готовые, реально сохранённые гипотезы
+	// (knowledge gaps — диагностическое дополнение к отчёту, не его ядро).
 	if err := s.repos.Runs.UpdateKnowledgeGaps(ctx, run.ID, run.KnowledgeGaps); err != nil {
-		return fmt.Errorf("persist knowledge gaps: %w", err)
+		logger.LogWarningCtx(ctx, "persist knowledge gaps for run %s: %v", run.ID, err)
 	}
 
 	return s.repos.Runs.MarkDone(ctx, run.ID)
@@ -284,21 +284,18 @@ type EntityReputation struct {
 // SubjectEntityID/MetricEntityID заполнены). Ошибка не блокирует
 // генерацию — отсутствие репутации просто равно "истории пока нет".
 func (s *Service) loadEntityReputations(ctx context.Context, claims []domain.Claim) []EntityReputation {
-	idSet := make(map[uuid.UUID]struct{})
+	var subjectIDs, metricIDs []uuid.UUID
 	for _, c := range claims {
 		if c.SubjectEntityID != nil {
-			idSet[*c.SubjectEntityID] = struct{}{}
+			subjectIDs = append(subjectIDs, *c.SubjectEntityID)
 		}
 		if c.MetricEntityID != nil {
-			idSet[*c.MetricEntityID] = struct{}{}
+			metricIDs = append(metricIDs, *c.MetricEntityID)
 		}
 	}
-	if len(idSet) == 0 {
+	ids := uniqueUUIDs(subjectIDs, metricIDs)
+	if len(ids) == 0 {
 		return nil
-	}
-	ids := make([]uuid.UUID, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
 	}
 
 	stats, err := s.repos.Entities.GetFeedbackStats(ctx, ids)
@@ -306,30 +303,14 @@ func (s *Service) loadEntityReputations(ctx context.Context, claims []domain.Cla
 		logger.LogWarningCtx(ctx, "load entity reputations: %v", err)
 		return nil
 	}
-	if len(stats) == 0 {
-		return nil
-	}
-	statIDs := make([]uuid.UUID, len(stats))
-	for i, st := range stats {
-		statIDs[i] = st.EntityID
-	}
-	entities, err := s.repos.Entities.GetByIDs(ctx, statIDs)
-	if err != nil {
-		return nil
-	}
-	nameByID := make(map[uuid.UUID]string, len(entities))
-	for _, e := range entities {
-		nameByID[e.ID] = e.CanonicalName
-	}
 
 	out := make([]EntityReputation, 0, len(stats))
 	for _, st := range stats {
-		name, ok := nameByID[st.EntityID]
-		if !ok || name == "" {
+		if st.CanonicalName == "" {
 			continue
 		}
 		out = append(out, EntityReputation{
-			Name: name, Confirmed: st.Confirmed, Rejected: st.Rejected, NeedsRevision: st.NeedsRevision,
+			Name: st.CanonicalName, Confirmed: st.Confirmed, Rejected: st.Rejected, NeedsRevision: st.NeedsRevision,
 		})
 	}
 	return out
@@ -367,16 +348,11 @@ func (s *Service) ListRuns(ctx context.Context, offset, limit int) ([]domain.Hyp
 // чтобы показать источник (document_title) каждой evidence-ссылки, а не
 // просто её количество.
 func (s *Service) GetClaimSources(ctx context.Context, hyps []domain.Hypothesis) (map[uuid.UUID]domain.Claim, error) {
-	idSet := make(map[uuid.UUID]struct{})
+	var refLists [][]uuid.UUID
 	for _, h := range hyps {
-		for _, ref := range h.EvidenceRefs {
-			idSet[ref] = struct{}{}
-		}
+		refLists = append(refLists, h.EvidenceRefs)
 	}
-	ids := make([]uuid.UUID, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
-	}
+	ids := uniqueUUIDs(refLists...)
 	claims, err := s.repos.Claims.GetByIDs(ctx, ids)
 	if err != nil {
 		return nil, errs.Wrap(err, errs.ErrTypeInternal, "get claim sources")

@@ -39,8 +39,14 @@ func InitRepos() (*Repos, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get sql.DB: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(10)
-	sqlDB.SetMaxIdleConns(5)
+	// 25, not 10: claim extraction alone runs up to 8 concurrent goroutines
+	// (each doing its own DB query), retrieval runs 3 concurrent facet
+	// queries, and the critic ensemble adds more — a pool capped at 10
+	// serializes exactly the concurrency those stages are written to
+	// exploit, so goroutines meant to run in parallel end up queuing on
+	// the connection pool instead.
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(10 * time.Minute)
 
 	return &Repos{

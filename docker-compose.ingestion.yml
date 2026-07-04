@@ -22,6 +22,15 @@ services:
     environment:
       HSA_OVERRIDE_GFX_VERSION: "10.3.0"
       GROBID_URL: http://grobid:8070
+      # Docling/EasyOCR page-by-page OCR over a long scanned book leaves the
+      # HIP caching allocator fragmented (small blocks reserved-but-unusable
+      # for the next page's slightly different tensor shape) until an
+      # allocation that would easily fit fails anyway ("Tried to allocate
+      # 52.00 MiB ... 26.00 MiB is free" after 11.64GiB accumulated across a
+      # single 151-page document). This is PyTorch's own suggested fix in
+      # that exact error message.
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      PYTORCH_HIP_ALLOC_CONF: "expandable_segments:True"
     depends_on:
       grobid:
         condition: service_healthy

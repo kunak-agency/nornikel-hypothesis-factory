@@ -52,7 +52,7 @@ func buildProblemSpec(ctx context.Context, client externalApi.LLMClient, rawText
 	resp, err := client.Complete(ctx, externalApi.CompleteRequest{
 		Messages: []externalApi.Message{
 			{Role: "system", Content: problemSpecSystemPrompt},
-			{Role: "user", Content: "<user_data>\n" + rawText + "\n</user_data>"},
+			{Role: "user", Content: "<user_data>\n" + escapeUserDataDelimiters(rawText) + "\n</user_data>"},
 		},
 		Temperature: 0.1,
 		MaxTokens:   1500,
@@ -66,6 +66,20 @@ func buildProblemSpec(ctx context.Context, client externalApi.LLMClient, rawText
 		return domain.ProblemSpec{}, fmt.Errorf("problemspec parse: %w (raw=%s)", err, resp.Text)
 	}
 	return spec, nil
+}
+
+// escapeUserDataDelimiters нейтрализует "<"/">" в rawText так, чтобы
+// пользовательский ввод не мог содержать буквальный "</user_data>" и тем
+// самым досрочно закрыть тег-обёртку, вытащив последующий (тоже
+// пользовательский) текст за пределы "это данные, не инструкции" границы —
+// classic delimiter-injection. Блочное экранирование проще и надёжнее, чем
+// матчинг конкретно этого тега: угловые скобки не несут содержательной
+// информации для extraction-задачи (в отличие от кавычек/дефисов, которые
+// встречаются в химических формулах и классах крупности).
+func escapeUserDataDelimiters(s string) string {
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
 }
 
 // extractJSON срезает markdown-ограждения и текст до/после JSON, которые

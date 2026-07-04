@@ -61,6 +61,13 @@ def get_docling_converter():
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
         pipeline_options.ocr_options = EasyOcrOptions(lang=["ru", "en"], force_full_page_ocr=True)
+        # Docling's default ocr_batch_size=4 feeds 4 page images through
+        # EasyOCR's CRAFT detector in one tensor batch; on a scan with larger/
+        # denser pages that single batch can demand ~10GB in one allocation
+        # (observed: "HIP out of memory. Tried to allocate 9.72 GiB" on a book
+        # that otherwise fits the 12GB card fine page-by-page). One page per
+        # OCR call trades some throughput for actually fitting in memory.
+        pipeline_options.ocr_batch_size = 1
         _docling_converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
@@ -200,18 +207,27 @@ def _release_gpu_memory() -> None:
 def _ingest_sync(tmp_path: str, filename: str) -> list[Chunk]:
     from docling.chunking import HybridChunker
 
-    converter = get_docling_converter()
-    result = converter.convert(tmp_path)
-    doc = result.document
-
-    chunker = HybridChunker()
-    chunks: list[Chunk] = []
+    # converter.convert() itself — not just the chunking loop below — is
+    # where OCR/layout models actually run and where OOM has been observed
+    # ("HIP out of memory ... Tried to allocate 9.72 GiB" inside convert()).
+    # The whole function used to only wrap the chunking loop in try/finally,
+    # so a convert() failure skipped _release_gpu_memory() entirely and left
+    # that GPU memory unrecoverable for every subsequent document in the
+    # same long-running container — exactly the scenario this fix targets.
+    result = None
+    doc = None
     try:
+        converter = get_docling_converter()
+        result = converter.convert(tmp_path)
+        doc = result.document
+
+        chunker = HybridChunker()
+        chunks: list[Chunk] = []
         _ingest_sync_body(doc, chunker, chunks, filename)
+        return chunks
     finally:
         del result, doc
         _release_gpu_memory()
-    return chunks
 
 
 def _ingest_sync_body(doc, chunker, chunks: list[Chunk], filename: str) -> None:
@@ -434,7 +450,14 @@ async def ingest_article(file: UploadFile = File(...)):
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    chunks = await asyncio.to_thread(_ingest_article_sync, tmp_path, file.filename)
+    try:
+        chunks = await asyncio.to_thread(_ingest_article_sync, tmp_path, file.filename)
+    finally:
+        # delete=False above is required (Docling/GROBID need a real path to
+        # open, not just an fd) — without an explicit cleanup here, every
+        # ingested article leaves its upload behind in the container's temp
+        # dir forever, eventually filling the disk on a long ingestion run.
+        os.unlink(tmp_path)
     return IngestResponse(chunks=chunks)
 
 
@@ -451,7 +474,10 @@ async def ingest(file: UploadFile = File(...)):
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    chunks = await asyncio.to_thread(_ingest_sync, tmp_path, file.filename)
+    try:
+        chunks = await asyncio.to_thread(_ingest_sync, tmp_path, file.filename)
+    finally:
+        os.unlink(tmp_path)
     return IngestResponse(chunks=chunks)
 
 

@@ -57,6 +57,20 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (int, error) {
 	if err := s.repos.Documents.Create(ctx, doc); err != nil {
 		return 0, errs.Wrap(err, errs.ErrTypeInternal, "create document")
 	}
+	// Document переживает только до конца этой функции без коммита чанков:
+	// любой ранний return ниже (ingest/embed/insert failure) откатывает его
+	// сам (ON DELETE CASCADE подчистит чанки, если insert успел частично
+	// пройти) — иначе неудачная попытка (например, транзиентный сбой БД
+	// посреди чанков) навсегда оставляет в базе знаний Document без
+	// чанков или с частью чанков, которые пользователь не может отличить
+	// от полноценного документа при повторной загрузке того же файла.
+	rollbackDocument := func() {
+		// Best-effort: если сам rollback тоже упадёт, orphan-Document
+		// остаётся обнаружимым и вручную чистимым (как делалось в этой
+		// сессии не раз) — заводить отдельный errs.ErrType ради этого не
+		// стоит, исходная ошибка ingest/embed важнее для вызывающей стороны.
+		_, _ = s.repos.Documents.Delete(ctx, doc.ID)
+	}
 
 	// sourceType=article — научная статья: GROBID (структура/цитируемость)
 	// вместо Docling общего назначения, требует docker-compose.ingestion.yml
@@ -69,6 +83,7 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (int, error) {
 		chunks, err = s.pyworker.Ingest(ctx, in.Filename, in.Data)
 	}
 	if err != nil {
+		rollbackDocument()
 		return 0, errs.Wrap(err, errs.ErrTypeInternal, "ingest failed")
 	}
 	if len(chunks) == 0 {
@@ -81,11 +96,13 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (int, error) {
 	}
 	vectors, err := s.pyworker.Embed(ctx, texts)
 	if err != nil {
+		rollbackDocument()
 		return 0, errs.Wrap(err, errs.ErrTypeInternal, "embed chunks failed")
 	}
 
+	domainChunks := make([]domain.Chunk, len(chunks))
 	for i, c := range chunks {
-		chunk := &domain.Chunk{
+		domainChunks[i] = domain.Chunk{
 			DocumentID:  doc.ID,
 			Ordinal:     c.Ordinal,
 			Section:     c.Section,
@@ -95,11 +112,12 @@ func (s *Service) Ingest(ctx context.Context, in IngestInput) (int, error) {
 		}
 		if i < len(vectors) {
 			v := pgvector.NewVector(vectors[i])
-			chunk.Embedding = &v
+			domainChunks[i].Embedding = &v
 		}
-		if err := s.repos.Chunks.Create(ctx, chunk); err != nil {
-			return i, errs.Wrap(err, errs.ErrTypeInternal, fmt.Sprintf("insert chunk %d", i))
-		}
+	}
+	if err := s.repos.Chunks.CreateBatch(ctx, domainChunks); err != nil {
+		rollbackDocument()
+		return 0, errs.Wrap(err, errs.ErrTypeInternal, fmt.Sprintf("insert %d chunks", len(domainChunks)))
 	}
 
 	return len(chunks), nil

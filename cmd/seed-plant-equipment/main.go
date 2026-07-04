@@ -84,6 +84,26 @@ func main() {
 	}
 
 	all := append(tofEquipment, malomyrEquipment...)
+
+	// Реально идемпотентно (а не только по заявлению в шапке файла): чистим
+	// строки ровно тех фабрик, что этот сидер заливает, перед повторной
+	// вставкой — без этого повторный запуск (например, после правки списка
+	// оборудования) дублирует уже существующие строки, т.к. Create ничего
+	// не проверяет на конфликт.
+	plantNames := map[string]bool{}
+	for _, e := range all {
+		plantNames[e.PlantName] = true
+	}
+	for plant := range plantNames {
+		deleted, err := repos.PlantEquipment.DeleteByPlantName(ctx, plant)
+		if err != nil {
+			log.Fatalf("clear existing rows for %s: %v", plant, err)
+		}
+		if deleted > 0 {
+			log.Printf("cleared %d existing rows for %s", deleted, plant)
+		}
+	}
+
 	inserted := 0
 	for i := range all {
 		if err := repos.PlantEquipment.Create(ctx, &all[i]); err != nil {

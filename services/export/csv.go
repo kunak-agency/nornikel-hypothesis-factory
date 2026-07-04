@@ -42,14 +42,14 @@ func ToCSV(hyps []domain.Hypothesis, sources map[uuid.UUID][]string) ([]byte, er
 		}
 		row := []string{
 			strconv.Itoa(h.Rank),
-			h.Statement,
-			h.Mechanism,
-			h.ExpectedKPIEffect.Metric,
-			h.ExpectedKPIEffect.Direction,
-			h.ExpectedKPIEffect.Magnitude,
-			h.NoveltyReason,
-			strings.Join(h.Risks, " | "),
-			strings.Join(verification, " | "),
+			escapeCSVFormula(h.Statement),
+			escapeCSVFormula(h.Mechanism),
+			escapeCSVFormula(h.ExpectedKPIEffect.Metric),
+			escapeCSVFormula(h.ExpectedKPIEffect.Direction),
+			escapeCSVFormula(h.ExpectedKPIEffect.Magnitude),
+			escapeCSVFormula(h.NoveltyReason),
+			escapeCSVFormula(strings.Join(h.Risks, " | ")),
+			escapeCSVFormula(strings.Join(verification, " | ")),
 			formatFloat(h.Scores.EvidenceStrength),
 			formatFloat(h.Scores.Feasibility),
 			formatFloat(h.Scores.Impact),
@@ -57,9 +57,9 @@ func ToCSV(hyps []domain.Hypothesis, sources map[uuid.UUID][]string) ([]byte, er
 			formatFloat(h.Scores.RiskPenalty),
 			formatFloat(h.Scores.Confidence),
 			formatFloat(h.Scores.Total),
-			h.CriticNotes,
+			escapeCSVFormula(h.CriticNotes),
 			strconv.Itoa(len(h.EvidenceRefs)),
-			strings.Join(sources[h.ID], " | "),
+			escapeCSVFormula(strings.Join(sources[h.ID], " | ")),
 		}
 		if err := w.Write(row); err != nil {
 			return nil, fmt.Errorf("write row: %w", err)
@@ -74,4 +74,22 @@ func ToCSV(hyps []domain.Hypothesis, sources map[uuid.UUID][]string) ([]byte, er
 
 func formatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
+// escapeCSVFormula защищает от CSV/Excel formula injection: LLM-сгенерированный
+// текст (Statement/Mechanism/Risks/...) в конечном счёте происходит от
+// недоверенного пользовательского rawText (см. problemspec.go), и если такая
+// строка начинается с =, +, -  или @, Excel/LibreOffice при открытии
+// интерпретирует ячейку как формулу вместо текста — вплоть до выполнения
+// DDE-payload. Ведущий апостроф — стандартный способ форсировать текстовый
+// тип ячейки, Excel сам не показывает его пользователю.
+func escapeCSVFormula(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }

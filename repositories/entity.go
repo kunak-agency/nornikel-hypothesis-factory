@@ -57,6 +57,7 @@ func (r *EntityRepo) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.En
 // гипотезами с тем или иным экспертным вердиктом, по всем прошлым прогонам.
 type FeedbackStats struct {
 	EntityID      uuid.UUID
+	CanonicalName string
 	Confirmed     int
 	Rejected      int
 	NeedsRevision int
@@ -67,7 +68,9 @@ type FeedbackStats struct {
 // services/hypothesisfactory/entities.go), так что достаточно поднять
 // историю подтверждений/отклонений по entity_id — не нужен отдельный лог
 // "похожих гипотез", граф уже несёт эту связь через claims->hypotheses->
-// feedback.
+// feedback. Джойнит entities прямо здесь за CanonicalName — раньше вызывающая
+// сторона (loadEntityReputations) делала для этого отдельный GetByIDs,
+// второй sequential round-trip на то же множество ID.
 func (r *EntityRepo) GetFeedbackStats(ctx context.Context, entityIDs []uuid.UUID) ([]FeedbackStats, error) {
 	if len(entityIDs) == 0 {
 		return nil, nil
@@ -79,14 +82,15 @@ func (r *EntityRepo) GetFeedbackStats(ctx context.Context, entityIDs []uuid.UUID
 			UNION ALL
 			SELECT id AS claim_id, metric_entity_id AS entity_id FROM claims WHERE metric_entity_id = ANY(?)
 		)
-		SELECT ce.entity_id,
+		SELECT ce.entity_id, e.canonical_name,
 		       count(*) FILTER (WHERE f.verdict = 'confirmed') AS confirmed,
 		       count(*) FILTER (WHERE f.verdict = 'rejected') AS rejected,
 		       count(*) FILTER (WHERE f.verdict = 'needs_revision') AS needs_revision
 		FROM claim_entities ce
+		JOIN entities e ON e.id = ce.entity_id
 		JOIN hypotheses h ON h.evidence_refs @> jsonb_build_array(ce.claim_id::text)
 		JOIN feedbacks f ON f.hypothesis_id = h.id
-		GROUP BY ce.entity_id
+		GROUP BY ce.entity_id, e.canonical_name
 	`, entityIDs, entityIDs).Scan(&out).Error
 	return out, err
 }

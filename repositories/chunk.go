@@ -21,6 +21,16 @@ func (r *ChunkRepo) Create(ctx context.Context, c *domain.Chunk) error {
 	return r.db.WithContext(ctx).Create(c).Error
 }
 
+// CreateBatch вставляет все чанки документа одним batched INSERT вместо
+// одного round-trip'а на чанк — для книги на сотни/тысячи чанков это разница
+// между одним запросом и сотнями последовательных.
+func (r *ChunkRepo) CreateBatch(ctx context.Context, chunks []domain.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).CreateInBatches(chunks, 200).Error
+}
+
 // GetNeighbors возвращает чанки того же документа в окне [ordinal-radius,
 // ordinal+radius], упорядоченные по ordinal. Docling эмитит table-чанк и
 // поясняющий его текст как соседние ordinal внутри одного документа (даже
