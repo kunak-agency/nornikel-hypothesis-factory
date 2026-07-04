@@ -45,7 +45,7 @@ func ToDOCX(spec domain.ProblemSpec, hyps []domain.Hypothesis, sources map[uuid.
 	if len(spec.TargetMetals) > 0 {
 		p := doc.AddParagraph()
 		p.AddText("Целевые металлы: ").Bold()
-		p.AddText(joinComma(spec.TargetMetals))
+		p.AddText(strings.Join(spec.TargetMetals, ", "))
 	}
 	if len(spec.LossHotspots) > 0 {
 		doc.AddParagraph().AddText("Точки потерь:").Bold()

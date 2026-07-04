@@ -25,15 +25,7 @@ type Chunk struct {
 }
 
 func (c *Chunk) BeforeCreate(tx *gorm.DB) error {
-	if c.ID != uuid.Nil {
-		return nil
-	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	c.ID = id
-	return nil
+	return NewIDIfEmpty(&c.ID)
 }
 
 // RetrievedChunk несёт чанк вместе со скорингом гибридного поиска и метаданными

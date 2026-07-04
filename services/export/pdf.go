@@ -54,7 +54,7 @@ func ToPDF(spec domain.ProblemSpec, hyps []domain.Hypothesis, sources map[uuid.U
 		writeLabeledLine(pdf, contentWidth, "Фабрика: ", spec.Plant)
 	}
 	if len(spec.TargetMetals) > 0 {
-		writeLabeledLine(pdf, contentWidth, "Целевые металлы: ", joinComma(spec.TargetMetals))
+		writeLabeledLine(pdf, contentWidth, "Целевые металлы: ", strings.Join(spec.TargetMetals, ", "))
 	}
 	if len(spec.LossHotspots) > 0 {
 		pdf.SetFont(pdfFontFamily, "B", 11)
@@ -154,13 +154,3 @@ func drawSeparator(pdf *fpdf.Fpdf, width float64) {
 	pdf.Ln(4)
 }
 
-func joinComma(items []string) string {
-	out := ""
-	for i, it := range items {
-		if i > 0 {
-			out += ", "
-		}
-		out += it
-	}
-	return out
-}

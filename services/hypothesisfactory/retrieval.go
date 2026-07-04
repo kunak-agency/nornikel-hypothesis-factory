@@ -3,6 +3,7 @@ package hypothesisfactory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -202,9 +203,5 @@ func buildRetrievalQuery(spec domain.ProblemSpec) string {
 }
 
 func sortByFusedScoreDesc(cs []domain.RetrievedChunk) {
-	for i := 1; i < len(cs); i++ {
-		for j := i; j > 0 && cs[j].FusedScore > cs[j-1].FusedScore; j-- {
-			cs[j], cs[j-1] = cs[j-1], cs[j]
-		}
-	}
+	sort.Slice(cs, func(i, j int) bool { return cs[i].FusedScore > cs[j].FusedScore })
 }

@@ -87,6 +87,18 @@ func ParseTailingsExcel(data []byte) (domain.CaseFacts, error) {
 	// значений и запомнить как тег для всех последующих sizeclass/
 	// mineralform строк, вплоть до следующего такого маркера.
 	var currentStream string
+	// skipAggregateStream — Пример 4/ТОФ помимо "Хвосты породные"/"Хвосты
+	// пирротиновые" (два физических потока) даёт ТРЕТЬЮ секцию "Хвосты
+	// отвальные" ("отвальные хвосты общие"), чьи цифры по классам крупности
+	// — это сумма двух предыдущих потоков (проверено: -10мкм Ni 1253.18 +
+	// 7266.34 = 8519.5 ≈ 8516.73 из "Хвосты отвальные", с точностью до
+	// округления), а не независимый третий поток. Без этого различения
+	// BuildLossHotspots ранжировал бы одну и ту же физическую точку потерь
+	// трижды (по разу за поток + один раз за агрегат), вытесняя из top-N
+	// действительно разные классы крупности. Отличить от физических потоков
+	// можно по метке: "Хвосты отвальные" содержит корень "отвальн", которого
+	// нет ни у "породные", ни у "пирротиновые".
+	var skipAggregateStream bool
 
 	// excludedMineralFormLabels — "Извлекаемый металл"/"Не извлекаемый
 	// металл" — это отдельная сводка (сколько потерянного металла в принципе
@@ -169,6 +181,11 @@ func ParseTailingsExcel(data []byte) (domain.CaseFacts, error) {
 			// выше) — не sizeclass/mineralform строка сама по себе, просто
 			// тег для последующих.
 			currentStream = label
+			skipAggregateStream = strings.Contains(strings.ToLower(label), "отвальн")
+		case skipAggregateStream:
+			// Строки sizeclass/mineralform агрегатного потока намеренно не
+			// попадают ни в facts.SizeClasses, ни в facts.MineralForms —
+			// они дублируют (суммируют) уже учтённые физические потоки.
 		case tableKind == "sizeclass" && !isTotal:
 			sc := domain.SizeClassFact{Label: label, Stream: currentStream, MetalLossPct: metalLossPct, MetalTons: metalTons}
 			// "Доля класса, %" — не привязанная к металлу колонка, сразу

@@ -75,13 +75,5 @@ type HypothesisRun struct {
 }
 
 func (r *HypothesisRun) BeforeCreate(tx *gorm.DB) error {
-	if r.ID != uuid.Nil {
-		return nil
-	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	r.ID = id
-	return nil
+	return NewIDIfEmpty(&r.ID)
 }

@@ -21,13 +21,5 @@ type Document struct {
 }
 
 func (d *Document) BeforeCreate(tx *gorm.DB) error {
-	if d.ID != uuid.Nil {
-		return nil
-	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	d.ID = id
-	return nil
+	return NewIDIfEmpty(&d.ID)
 }

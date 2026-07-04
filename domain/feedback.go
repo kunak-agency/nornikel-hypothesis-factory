@@ -8,8 +8,11 @@ import (
 )
 
 // Feedback — экспертная оценка одной гипотезы (confirmed/rejected/needs_revision).
-// Задел под "обучение на фидбэке" из кейса: сейчас только пишется, в
-// ранжировании/генерации не используется.
+// "Обучение на фидбэке" из кейса реализовано как граф репутации сущностей
+// (см. services/hypothesisfactory/(*Service).loadEntityReputations,
+// repositories/entity.go's GetFeedbackStats) — join claims→hypotheses.
+// evidence_refs→feedbacks через entity resolution, а не плоская инъекция
+// фидбэка в промпт.
 type Feedback struct {
 	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
 	HypothesisID uuid.UUID `gorm:"type:uuid;not null;index"`
@@ -20,13 +23,5 @@ type Feedback struct {
 }
 
 func (f *Feedback) BeforeCreate(tx *gorm.DB) error {
-	if f.ID != uuid.Nil {
-		return nil
-	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	f.ID = id
-	return nil
+	return NewIDIfEmpty(&f.ID)
 }

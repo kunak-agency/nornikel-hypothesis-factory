@@ -28,13 +28,5 @@ type PlantEquipment struct {
 }
 
 func (e *PlantEquipment) BeforeCreate(tx *gorm.DB) error {
-	if e.ID != uuid.Nil {
-		return nil
-	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	e.ID = id
-	return nil
+	return NewIDIfEmpty(&e.ID)
 }
