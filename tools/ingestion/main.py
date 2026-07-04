@@ -37,10 +37,33 @@ _reranker_model = None
 
 
 def get_docling_converter():
+    # Docling's bundled RapidOCR integration (this Docling version, 2.108.0)
+    # only ships "english"/"latin"/"chinese" model sets — there is no
+    # Cyrillic set at all, so passing lang=["ru"] to RapidOcrOptions still
+    # silently falls back to the default (Chinese) recognizer on Russian
+    # scans, which is what this codebase did for months: every scanned book
+    # ingested through the default DocumentConverter() got Chinese OCR run
+    # against Cyrillic glyphs, producing near-total noise (digits/punctuation/
+    # stray Latin letters instead of words) — confirmed by inspecting ingested
+    # chunk content for Поваров/Андреев/Богданов/Генкин/Мещеряков/Комлев.
+    # EasyOCR does ship a Russian recognition model, so it replaces RapidOCR
+    # here. force_full_page_ocr=True additionally means Docling always runs
+    # this OCR pass itself rather than trusting any embedded text layer the
+    # source PDF might already carry (geokniga.org/DJVU-converted scans can
+    # ship their own low-quality, non-Cyrillic-aware embedded text layer,
+    # which Docling would otherwise prefer over its own OCR when present).
     global _docling_converter
     if _docling_converter is None:
-        from docling.document_converter import DocumentConverter
-        _docling_converter = DocumentConverter()
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = True
+        pipeline_options.ocr_options = EasyOcrOptions(lang=["ru", "en"], force_full_page_ocr=True)
+        _docling_converter = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+        )
     return _docling_converter
 
 

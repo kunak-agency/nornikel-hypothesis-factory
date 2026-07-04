@@ -1,6 +1,9 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 docling==2.108.0
+# Docling's bundled RapidOCR has no Cyrillic model set (only english/latin/
+# chinese) — EasyOCR does support Russian, see get_docling_converter().
+easyocr
 # sentence-transformers (not FlagEmbedding): FlagEmbedding 1.3.4 eagerly imports
 # decoder-only Gemma-based reranker code at import time that breaks against
 # current transformers internals, even though we only need encoder-only
