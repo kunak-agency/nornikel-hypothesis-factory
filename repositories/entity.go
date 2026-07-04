@@ -95,3 +95,27 @@ func (r *EntityRepo) GetFeedbackStats(ctx context.Context, entityIDs []uuid.UUID
 	`, entityIDs, entityIDs).Scan(&out).Error
 	return out, err
 }
+
+// AllFeedbackStats — репутация всех сущностей, по которым есть хотя бы один
+// экспертный вердикт (view "что система выучила из фидбэка").
+func (r *EntityRepo) AllFeedbackStats(ctx context.Context) ([]FeedbackStats, error) {
+	var out []FeedbackStats
+	err := r.db.WithContext(ctx).Raw(`
+		WITH claim_entities AS (
+			SELECT id AS claim_id, subject_entity_id AS entity_id FROM claims WHERE subject_entity_id IS NOT NULL
+			UNION ALL
+			SELECT id AS claim_id, metric_entity_id AS entity_id FROM claims WHERE metric_entity_id IS NOT NULL
+		)
+		SELECT ce.entity_id, e.canonical_name,
+		       count(*) FILTER (WHERE f.verdict = 'confirmed') AS confirmed,
+		       count(*) FILTER (WHERE f.verdict = 'rejected') AS rejected,
+		       count(*) FILTER (WHERE f.verdict = 'needs_revision') AS needs_revision
+		FROM claim_entities ce
+		JOIN entities e ON e.id = ce.entity_id
+		JOIN hypotheses h ON h.evidence_refs @> jsonb_build_array(ce.claim_id::text)
+		JOIN feedbacks f ON f.hypothesis_id = h.id
+		GROUP BY ce.entity_id, e.canonical_name
+		ORDER BY count(*) DESC
+	`).Scan(&out).Error
+	return out, err
+}

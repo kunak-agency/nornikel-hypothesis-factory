@@ -239,6 +239,9 @@ func (s *Service) runPipeline(ctx context.Context, run *domain.HypothesisRun) er
 		return fmt.Errorf("no grounded claims extracted from %d retrieved chunks — knowledge base has no verifiable evidence for this problem", len(chunks))
 	}
 	resolveEntities(ctx, s.repos.Entities, s.pyworker, claims)
+	for i := range claims {
+		claims[i].RunID = &run.ID
+	}
 	if err := s.repos.Claims.CreateBatch(ctx, claims); err != nil {
 		return fmt.Errorf("persist claims: %w", err)
 	}
@@ -385,4 +388,131 @@ func (s *Service) GetClaimSources(ctx context.Context, hyps []domain.Hypothesis)
 		out[c.ID] = c
 	}
 	return out, nil
+}
+
+// GetRunClaims — evidence-pack прогона целиком: все claims, извлечённые в
+// нём (включая не процитированные гипотезами), с пометкой, какие гипотезы
+// каждый claim цитируют.
+func (s *Service) GetRunClaims(ctx context.Context, runID string) ([]domain.Claim, map[uuid.UUID][]uuid.UUID, error) {
+	uid, err := uuid.Parse(runID)
+	if err != nil {
+		return nil, nil, errs.NewValidationError("invalid run id")
+	}
+	claims, err := s.repos.Claims.GetByRunID(ctx, uid)
+	if err != nil {
+		return nil, nil, errs.Wrap(err, errs.ErrTypeInternal, "get run claims")
+	}
+	hyps, err := s.repos.Hypotheses.GetByRunID(ctx, uid)
+	if err != nil {
+		return nil, nil, errs.Wrap(err, errs.ErrTypeInternal, "get run hypotheses")
+	}
+	citedBy := make(map[uuid.UUID][]uuid.UUID)
+	for _, h := range hyps {
+		for _, ref := range h.EvidenceRefs {
+			citedBy[ref] = append(citedBy[ref], h.ID)
+		}
+	}
+	return claims, citedBy, nil
+}
+
+// DeleteRun удаляет прогон каскадом (гипотезы + их фидбэк уходят по FK).
+func (s *Service) DeleteRun(ctx context.Context, runID string) error {
+	uid, err := uuid.Parse(runID)
+	if err != nil {
+		return errs.NewValidationError("invalid run id")
+	}
+	n, err := s.repos.Runs.Delete(ctx, uid)
+	if err != nil {
+		return errs.Wrap(err, errs.ErrTypeInternal, "delete run")
+	}
+	if n == 0 {
+		return errs.NewNotFoundError("run")
+	}
+	return nil
+}
+
+// RerankRun пересчитывает Total/Rank гипотез прогона с новыми весами БЕЗ
+// повторных LLM-вызовов: компоненты оценок (evidence/feasibility/impact/
+// novelty/risk) уже сохранены после критик-ансамбля, меняется только
+// прозрачная формула свёртки — "экспертная настройка весов" интерактивна
+// и стоит миллисекунды, а не минуты прогона.
+func (s *Service) RerankRun(ctx context.Context, runID string, weights domain.RankingWeights) ([]domain.Hypothesis, error) {
+	uid, err := uuid.Parse(runID)
+	if err != nil {
+		return nil, errs.NewValidationError("invalid run id")
+	}
+	hyps, err := s.repos.Hypotheses.GetByRunID(ctx, uid)
+	if err != nil {
+		return nil, errs.Wrap(err, errs.ErrTypeInternal, "get hypotheses")
+	}
+	if len(hyps) == 0 {
+		return nil, errs.NewNotFoundError("hypotheses for run")
+	}
+	for i := range hyps {
+		hyps[i].Scores.Total = totalScore(hyps[i].Scores, weights)
+	}
+	sort.SliceStable(hyps, func(i, j int) bool { return hyps[i].Scores.Total > hyps[j].Scores.Total })
+	for i := range hyps {
+		hyps[i].Rank = i + 1
+		if err := s.repos.Hypotheses.UpdateScoresAndRank(ctx, &hyps[i]); err != nil {
+			return nil, errs.Wrap(err, errs.ErrTypeInternal, "persist rerank")
+		}
+	}
+	return hyps, nil
+}
+
+// GetHypothesisFeedback — все экспертные оценки гипотезы.
+func (s *Service) GetHypothesisFeedback(ctx context.Context, hypothesisID string) ([]domain.Feedback, error) {
+	uid, err := uuid.Parse(hypothesisID)
+	if err != nil {
+		return nil, errs.NewValidationError("invalid hypothesisId")
+	}
+	return s.repos.Feedback.ListByHypothesis(ctx, uid)
+}
+
+// EntityReputations — репутация всех сущностей с хотя бы одним вердиктом:
+// видимая сторона "обучения на фидбэке".
+func (s *Service) EntityReputations(ctx context.Context) ([]repositories.FeedbackStats, error) {
+	return s.repos.Entities.AllFeedbackStats(ctx)
+}
+
+// --- CRUD структурированного оборудования фабрик (plant_equipment) ---
+
+func (s *Service) ListPlantEquipment(ctx context.Context, plantName string) ([]domain.PlantEquipment, error) {
+	return s.repos.PlantEquipment.List(ctx, plantName)
+}
+
+func (s *Service) CreatePlantEquipment(ctx context.Context, e *domain.PlantEquipment) error {
+	if err := s.repos.PlantEquipment.Create(ctx, e); err != nil {
+		return errs.Wrap(err, errs.ErrTypeInternal, "create plant equipment")
+	}
+	return nil
+}
+
+func (s *Service) UpdatePlantEquipment(ctx context.Context, e *domain.PlantEquipment) error {
+	n, err := s.repos.PlantEquipment.Update(ctx, e)
+	if err != nil {
+		return errs.Wrap(err, errs.ErrTypeInternal, "update plant equipment")
+	}
+	if n == 0 {
+		return errs.NewNotFoundError("plant equipment")
+	}
+	return nil
+}
+
+func (s *Service) DeletePlantEquipment(ctx context.Context, id uuid.UUID) error {
+	n, err := s.repos.PlantEquipment.Delete(ctx, id)
+	if err != nil {
+		return errs.Wrap(err, errs.ErrTypeInternal, "delete plant equipment")
+	}
+	if n == 0 {
+		return errs.NewNotFoundError("plant equipment")
+	}
+	return nil
+}
+
+// Plants — известные фабрики (по plant_equipment) для селектора "выбор
+// фабрики настройкой".
+func (s *Service) Plants(ctx context.Context) ([]repositories.PlantSummary, error) {
+	return s.repos.PlantEquipment.Plants(ctx)
 }

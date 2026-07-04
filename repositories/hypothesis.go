@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 
 	"hypothesis-factory/domain"
 
@@ -36,4 +37,16 @@ func (r *HypothesisRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Hyp
 	var h domain.Hypothesis
 	err := r.db.WithContext(ctx).First(&h, "id = ?", id).Error
 	return ignoreNotFound(&h, err)
+}
+
+// UpdateScoresAndRank сохраняет пересчитанные Total/Rank после пересортировки
+// с новыми весами (POST /runs/{id}/rerank) — компоненты оценок судей не
+// меняются, только итог и позиция.
+func (r *HypothesisRepo) UpdateScoresAndRank(ctx context.Context, h *domain.Hypothesis) error {
+	scores, err := json.Marshal(h.Scores)
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&domain.Hypothesis{}).Where("id = ?", h.ID).
+		Updates(map[string]any{"scores": scores, "rank": h.Rank}).Error
 }

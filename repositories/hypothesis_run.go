@@ -68,3 +68,10 @@ func (r *HypothesisRunRepo) UpdateKnowledgeGaps(ctx context.Context, id uuid.UUI
 	return r.db.WithContext(ctx).Model(&domain.HypothesisRun{}).Where("id = ?", id).
 		Update("knowledge_gaps", raw).Error
 }
+
+// Delete удаляет прогон; гипотезы и их фидбэк уходят каскадом (FK ON DELETE
+// CASCADE, см. MigrateDB). Возвращает число удалённых строк (0 = не найден).
+func (r *HypothesisRunRepo) Delete(ctx context.Context, id uuid.UUID) (int64, error) {
+	res := r.db.WithContext(ctx).Where("id = ?", id).Delete(&domain.HypothesisRun{})
+	return res.RowsAffected, res.Error
+}

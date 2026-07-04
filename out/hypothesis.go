@@ -41,3 +41,8 @@ func HypothesisFromDomain(h *domain.Hypothesis) HypothesisResponse {
 		CreatedAt:         h.CreatedAt,
 	}
 }
+
+type HypothesisListResponse struct {
+	Items []HypothesisResponse `json:"items"`
+	Total int                  `json:"total"`
+}

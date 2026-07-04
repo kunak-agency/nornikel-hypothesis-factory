@@ -312,3 +312,68 @@ func (h *Handler) GetRunReportJira(c *fiber.Ctx) error {
 	c.Set(fiber.HeaderContentDisposition, `attachment; filename="report.jira.json"`)
 	return c.Send(jiraBytes)
 }
+
+// GetRunClaims возвращает evidence-pack прогона: все извлечённые claims с
+// цитатами, источниками и ссылками на цитирующие их гипотезы — полная
+// интерпретируемость цепочки источник→цитата→claim→гипотеза.
+// @Summary      Evidence-pack прогона (claims)
+// @Tags         runs
+// @Produce      json
+// @Param        runId  path  string  true  "UUID прогона"
+// @Success      200  {object}  out.ClaimListResponse
+// @Failure      404  {object}  errs.Error
+// @Router       /runs/{runId}/claims [get]
+func (h *Handler) GetRunClaims(c *fiber.Ctx) error {
+	claims, citedBy, err := h.services.Pipeline.GetRunClaims(c.UserContext(), c.Params("runId"))
+	if err != nil {
+		return err
+	}
+	resp := out.ClaimListResponse{Items: make([]out.ClaimResponse, 0, len(claims)), Total: len(claims)}
+	for i := range claims {
+		resp.Items = append(resp.Items, out.ClaimFromDomain(&claims[i], citedBy[claims[i].ID]))
+	}
+	return c.JSON(resp)
+}
+
+// DeleteRun удаляет прогон (гипотезы и фидбэк уходят каскадом).
+// @Summary      Удаление прогона
+// @Tags         runs
+// @Param        runId  path  string  true  "UUID прогона"
+// @Success      204  "Удалено"
+// @Failure      404  {object}  errs.Error
+// @Router       /runs/{runId} [delete]
+func (h *Handler) DeleteRun(c *fiber.Ctx) error {
+	if err := h.services.Pipeline.DeleteRun(c.UserContext(), c.Params("runId")); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// RerankRun пересортировывает готовые гипотезы прогона с новыми весами
+// критериев без повторных LLM-вызовов (оценки судей сохранены, пересчёт —
+// только прозрачной формулы) — интерактивная "экспертная настройка весов".
+// @Summary      Пересортировка гипотез с новыми весами
+// @Tags         runs
+// @Accept       json
+// @Produce      json
+// @Param        runId  path      string            true  "UUID прогона"
+// @Param        body   body      in.RerankRequest  true  "Новые веса (незаполненные = дефолт)"
+// @Success      200  {object}  out.HypothesisListResponse
+// @Failure      404  {object}  errs.Error
+// @Failure      422  {object}  errs.Error
+// @Router       /runs/{runId}/rerank [post]
+func (h *Handler) RerankRun(c *fiber.Ctx) error {
+	var body in.RerankRequest
+	if err := c.BodyParser(&body); err != nil {
+		return errs.NewBadRequestError("invalid json")
+	}
+	hyps, err := h.services.Pipeline.RerankRun(c.UserContext(), c.Params("runId"), body.RankingWeights)
+	if err != nil {
+		return err
+	}
+	resp := out.HypothesisListResponse{Items: make([]out.HypothesisResponse, 0, len(hyps)), Total: len(hyps)}
+	for i := range hyps {
+		resp.Items = append(resp.Items, out.HypothesisFromDomain(&hyps[i]))
+	}
+	return c.JSON(resp)
+}

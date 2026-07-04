@@ -34,3 +34,11 @@ func (r *ClaimRepo) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Cla
 	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&out).Error
 	return out, err
 }
+
+// GetByRunID — evidence-pack прогона целиком (включая claims, не
+// процитированные ни одной гипотезой).
+func (r *ClaimRepo) GetByRunID(ctx context.Context, runID uuid.UUID) ([]domain.Claim, error) {
+	var claims []domain.Claim
+	err := r.db.WithContext(ctx).Where("run_id = ?", runID).Order("created_at ASC").Find(&claims).Error
+	return claims, err
+}

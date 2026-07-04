@@ -47,3 +47,46 @@ func (h *Handler) SubmitFeedback(c *fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusCreated).JSON(out.FeedbackFromDomain(fb))
 }
+
+// ListHypothesisFeedback возвращает все экспертные оценки гипотезы.
+// @Summary      Оценки гипотезы
+// @Tags         hypotheses
+// @Produce      json
+// @Param        hypothesisId  path  string  true  "UUID гипотезы"
+// @Success      200  {object}  out.FeedbackListResponse
+// @Failure      422  {object}  errs.Error
+// @Router       /hypotheses/{hypothesisId}/feedback [get]
+func (h *Handler) ListHypothesisFeedback(c *fiber.Ctx) error {
+	items, err := h.services.Pipeline.GetHypothesisFeedback(c.UserContext(), c.Params("hypothesisId"))
+	if err != nil {
+		return err
+	}
+	resp := out.FeedbackListResponse{Items: make([]out.FeedbackResponse, 0, len(items)), Total: len(items)}
+	for i := range items {
+		resp.Items = append(resp.Items, out.FeedbackFromDomain(&items[i]))
+	}
+	return c.JSON(resp)
+}
+
+// ListEntityReputations — репутация сущностей по накопленному фидбэку:
+// видимая сторона "обучения на фидбэке".
+// @Summary      Репутация сущностей (обучение на фидбэке)
+// @Tags         entities
+// @Produce      json
+// @Success      200  {object}  out.EntityReputationListResponse
+// @Failure      500  {object}  errs.Error
+// @Router       /entities/reputation [get]
+func (h *Handler) ListEntityReputations(c *fiber.Ctx) error {
+	stats, err := h.services.Pipeline.EntityReputations(c.UserContext())
+	if err != nil {
+		return err
+	}
+	resp := out.EntityReputationListResponse{Items: make([]out.EntityReputationResponse, 0, len(stats))}
+	for _, s := range stats {
+		resp.Items = append(resp.Items, out.EntityReputationResponse{
+			EntityID: s.EntityID, CanonicalName: s.CanonicalName,
+			Confirmed: s.Confirmed, Rejected: s.Rejected, NeedsRevision: s.NeedsRevision,
+		})
+	}
+	return c.JSON(resp)
+}

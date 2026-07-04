@@ -168,10 +168,17 @@ curl -sS localhost:8080/v1/runs/<id>   # поллить до status=done|failed
 curl -sS localhost:8080/v1/runs/<id>/report.md
 ```
 
-Остальные эндпоинты: `GET /v1/documents` (база знаний), `POST /v1/documents` (загрузка нового
-документа), `DELETE /v1/documents/{id}`, `GET /v1/runs` (история, пагинация),
-`POST /v1/hypotheses/{id}/feedback` (оценка эксперта), `GET /v1/runs/{id}/graph` (граф
-источник→claim→гипотеза).
+Остальные эндпоинты:
+- база знаний: `GET/POST /v1/documents`, `GET/DELETE /v1/documents/{id}`;
+- прогоны: `GET /v1/runs` (история, пагинация), `DELETE /v1/runs/{id}`,
+  `GET /v1/runs/{id}/claims` (evidence-pack прогона: все извлечённые claims с цитатами,
+  источниками и цитирующими их гипотезами), `POST /v1/runs/{id}/rerank` (пересортировка готовых
+  гипотез с новыми весами критериев без повторных LLM-вызовов — интерактивная экспертная
+  настройка), `GET /v1/runs/{id}/graph` (граф источник→claim→гипотеза);
+- фидбэк: `POST/GET /v1/hypotheses/{id}/feedback`, `GET /v1/entities/reputation` (репутация
+  сущностей — видимая сторона обучения на фидбэке);
+- фабрики: `GET /v1/plants` (селектор фабрик), CRUD `GET/POST /v1/plant-equipment`,
+  `PUT/DELETE /v1/plant-equipment/{id}` (структурированное оборудование фабрик).
 
 ## Ingestion базы знаний
 

@@ -6,6 +6,7 @@ import (
 
 	"hypothesis-factory/domain"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -53,4 +54,52 @@ func (r *PlantEquipmentRepo) FindByPlantMention(ctx context.Context, mention str
 		}
 	}
 	return out, nil
+}
+
+// List возвращает оборудование, опционально фильтруя по фабрике (пустая
+// строка = все записи).
+func (r *PlantEquipmentRepo) List(ctx context.Context, plantName string) ([]domain.PlantEquipment, error) {
+	q := r.db.WithContext(ctx).Order("plant_name, equipment_type, model")
+	if plantName != "" {
+		q = q.Where("plant_name = ?", plantName)
+	}
+	var out []domain.PlantEquipment
+	err := q.Find(&out).Error
+	return out, err
+}
+
+// Update перезаписывает изменяемые поля записи. Возвращает число затронутых
+// строк (0 = не найдена).
+func (r *PlantEquipmentRepo) Update(ctx context.Context, e *domain.PlantEquipment) (int64, error) {
+	res := r.db.WithContext(ctx).Model(&domain.PlantEquipment{}).Where("id = ?", e.ID).
+		Updates(map[string]any{
+			"plant_name":       e.PlantName,
+			"plant_aliases":    e.PlantAliases,
+			"equipment_type":   e.EquipmentType,
+			"model":            e.Model,
+			"parameters":       e.Parameters,
+			"circuit_position": e.CircuitPosition,
+		})
+	return res.RowsAffected, res.Error
+}
+
+// Delete удаляет запись по id. Возвращает число удалённых строк.
+func (r *PlantEquipmentRepo) Delete(ctx context.Context, id uuid.UUID) (int64, error) {
+	res := r.db.WithContext(ctx).Where("id = ?", id).Delete(&domain.PlantEquipment{})
+	return res.RowsAffected, res.Error
+}
+
+// Plants — список известных фабрик (различные plant_name) с числом позиций
+// оборудования — то, из чего UI строит селектор "выбор фабрики".
+type PlantSummary struct {
+	PlantName      string `json:"plantName"`
+	EquipmentCount int    `json:"equipmentCount"`
+}
+
+func (r *PlantEquipmentRepo) Plants(ctx context.Context) ([]PlantSummary, error) {
+	var out []PlantSummary
+	err := r.db.WithContext(ctx).Model(&domain.PlantEquipment{}).
+		Select("plant_name, count(*) AS equipment_count").
+		Group("plant_name").Order("plant_name").Scan(&out).Error
+	return out, err
 }

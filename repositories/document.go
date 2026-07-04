@@ -58,3 +58,22 @@ func ignoreNotFound[T any](v *T, err error) (*T, error) {
 	}
 	return v, nil
 }
+
+// GetWithChunkCount — один документ с числом его chunks (деталь для UI).
+func (r *DocumentRepo) GetWithChunkCount(ctx context.Context, id uuid.UUID) (*DocumentWithChunkCount, error) {
+	var out DocumentWithChunkCount
+	err := r.db.WithContext(ctx).
+		Table("documents AS d").
+		Select("d.*, COUNT(c.id) AS chunk_count").
+		Joins("LEFT JOIN chunks c ON c.document_id = d.id").
+		Where("d.id = ?", id).
+		Group("d.id").
+		Scan(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	if out.ID == uuid.Nil {
+		return nil, nil
+	}
+	return &out, nil
+}

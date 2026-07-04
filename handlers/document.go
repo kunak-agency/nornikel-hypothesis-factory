@@ -111,3 +111,23 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
+
+// GetDocument возвращает один документ базы знаний с числом чанков.
+// @Summary      Документ базы знаний
+// @Tags         documents
+// @Produce      json
+// @Param        documentId  path      string  true  "UUID документа"
+// @Success      200  {object}  out.DocumentResponse
+// @Failure      404  {object}  errs.Error
+// @Router       /documents/{documentId} [get]
+func (h *Handler) GetDocument(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("documentId"))
+	if err != nil {
+		return errs.NewValidationError("invalid documentId")
+	}
+	doc, err := h.services.KnowledgeBase.Get(c.UserContext(), id)
+	if err != nil {
+		return err
+	}
+	return c.JSON(out.DocumentFromDomain(doc))
+}

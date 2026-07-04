@@ -146,3 +146,15 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
+
+// Get — один документ базы знаний с числом chunks.
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (*repositories.DocumentWithChunkCount, error) {
+	doc, err := s.repos.Documents.GetWithChunkCount(ctx, id)
+	if err != nil {
+		return nil, errs.Wrap(err, errs.ErrTypeInternal, "get document")
+	}
+	if doc == nil {
+		return nil, errs.NewNotFoundError("document")
+	}
+	return doc, nil
+}

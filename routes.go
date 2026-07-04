@@ -18,6 +18,7 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 	documents := v1.Group("/documents")
 	documents.Post("", hm.IngestDocument)
 	documents.Get("", hm.ListDocuments)
+	documents.Get("/:documentId", hm.GetDocument)
 	documents.Delete("/:documentId", hm.DeleteDocument)
 
 	runs := v1.Group("/runs")
@@ -25,6 +26,9 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 	runs.Post("/from-excel", hm.CreateRunFromExcel)
 	runs.Get("", handlers.Pagination(), hm.ListRuns)
 	runs.Get("/:runId", hm.GetRun)
+	runs.Delete("/:runId", hm.DeleteRun)
+	runs.Get("/:runId/claims", hm.GetRunClaims)
+	runs.Post("/:runId/rerank", hm.RerankRun)
 	runs.Get("/:runId/report.md", hm.GetRunReportMarkdown)
 	runs.Get("/:runId/report.pdf", hm.GetRunReportPDF)
 	runs.Get("/:runId/report.docx", hm.GetRunReportDOCX)
@@ -34,4 +38,14 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 
 	hypotheses := v1.Group("/hypotheses")
 	hypotheses.Post("/:hypothesisId/feedback", hm.SubmitFeedback)
+	hypotheses.Get("/:hypothesisId/feedback", hm.ListHypothesisFeedback)
+
+	v1.Get("/entities/reputation", hm.ListEntityReputations)
+
+	v1.Get("/plants", hm.ListPlants)
+	plantEquipment := v1.Group("/plant-equipment")
+	plantEquipment.Get("", hm.ListPlantEquipment)
+	plantEquipment.Post("", hm.CreatePlantEquipment)
+	plantEquipment.Put("/:equipmentId", hm.UpdatePlantEquipment)
+	plantEquipment.Delete("/:equipmentId", hm.DeletePlantEquipment)
 }
