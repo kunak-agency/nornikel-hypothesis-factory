@@ -30,12 +30,10 @@ type SubmitInput struct {
 }
 
 func (s *Service) Submit(ctx context.Context, in SubmitInput) (*domain.Feedback, error) {
-	h, err := s.repos.Hypotheses.GetByID(ctx, in.HypothesisID)
-	if err != nil {
-		return nil, errs.Wrap(err, errs.ErrTypeInternal, "get hypothesis")
-	}
-	if h == nil {
-		return nil, errs.NewNotFoundError("hypothesis")
+	// Проверяем существование гипотезы: GetByID сам вернёт типизированный
+	// errs.NotFound → 404 (requireFound). Пробрасываем как есть, не оборачивая.
+	if _, err := s.repos.Hypotheses.GetByID(ctx, in.HypothesisID); err != nil {
+		return nil, err
 	}
 
 	fb := &domain.Feedback{

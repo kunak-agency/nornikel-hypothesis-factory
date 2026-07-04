@@ -319,6 +319,58 @@
                 }
             }
         },
+        "/hypotheses/{hypothesisId}/verification-plan": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "hypotheses"
+                ],
+                "summary": "Обновление дорожной карты проверки гипотезы",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID гипотезы",
+                        "name": "hypothesisId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Шаги дорожной карты",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/in.UpdateVerificationPlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.HypothesisResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/plant-equipment": {
             "get": {
                 "produces": [
@@ -1190,6 +1242,13 @@
                 "ErrTypeTimeout": "504",
                 "ErrTypeValidation": "422"
             },
+            "x-enum-descriptions": [
+                "422",
+                "404",
+                "409",
+                "504",
+                "500"
+            ],
             "x-enum-varnames": [
                 "ErrTypeValidation",
                 "ErrTypeNotFound",
@@ -1330,6 +1389,51 @@
                         "needs_revision"
                     ],
                     "example": "confirmed"
+                }
+            }
+        },
+        "in.UpdateVerificationPlanRequest": {
+            "type": "object",
+            "required": [
+                "verificationPlan"
+            ],
+            "properties": {
+                "verificationPlan": {
+                    "description": "min=1: `required` на слайсе проверяет лишь non-nil, а JSON `[]` декодится в\nнепустой len-0 слайс и прошёл бы валидацию — пустой массив молча стёр бы\nсохранённую дорожную карту. min=1 закрывает это (пустой массив → 422).",
+                    "type": "array",
+                    "maxItems": 50,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/in.VerificationStepInput"
+                    }
+                }
+            }
+        },
+        "in.VerificationStepInput": {
+            "type": "object",
+            "required": [
+                "step"
+            ],
+            "properties": {
+                "estimatedCost": {
+                    "type": "string",
+                    "example": "~200 т.р. на реагенты"
+                },
+                "estimatedDuration": {
+                    "type": "string",
+                    "example": "1-2 недели"
+                },
+                "resource": {
+                    "type": "string",
+                    "example": "Лаборатория ОФ, реагенты"
+                },
+                "step": {
+                    "type": "string",
+                    "example": "Лабораторный тест флотации при pH 9.5"
+                },
+                "successCriterion": {
+                    "type": "string",
+                    "example": "Извлечение Ni +1.5% против базы"
                 }
             }
         },

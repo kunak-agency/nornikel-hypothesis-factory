@@ -45,6 +45,13 @@ func (s *Service) BuildRunGraph(ctx context.Context, runIDStr string) (Graph, er
 		return Graph{}, errs.NewValidationError("invalid run id")
 	}
 
+	// Явная проверка существования прогона: GetByRunID ниже вернёт пустой срез
+	// (без ошибки) и для несуществующего прогона, из-за чего граф раньше отдавал
+	// 200 с пустым графом вместо 404. GetByID отдаёт типизированный NotFound.
+	if _, err := s.repos.Runs.GetByID(ctx, runID); err != nil {
+		return Graph{}, err
+	}
+
 	hyps, err := s.repos.Hypotheses.GetByRunID(ctx, runID)
 	if err != nil {
 		return Graph{}, errs.Wrap(err, errs.ErrTypeInternal, "get hypotheses")

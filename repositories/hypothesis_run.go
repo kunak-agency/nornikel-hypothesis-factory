@@ -22,7 +22,7 @@ func (r *HypothesisRunRepo) Create(ctx context.Context, run *domain.HypothesisRu
 func (r *HypothesisRunRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.HypothesisRun, error) {
 	var run domain.HypothesisRun
 	err := r.db.WithContext(ctx).First(&run, "id = ?", id).Error
-	return ignoreNotFound(&run, err)
+	return requireFound(&run, err, "run")
 }
 
 // List возвращает страницу прогонов, самые новые первыми — история для UI.

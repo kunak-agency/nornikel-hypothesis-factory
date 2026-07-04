@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"hypothesis-factory/domain"
+	"hypothesis-factory/pkg/errs"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -39,7 +40,7 @@ func (r *DocumentRepo) List(ctx context.Context) ([]DocumentWithChunkCount, erro
 func (r *DocumentRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Document, error) {
 	var d domain.Document
 	err := r.db.WithContext(ctx).First(&d, "id = ?", id).Error
-	return ignoreNotFound(&d, err)
+	return requireFound(&d, err, "document")
 }
 
 // Delete каскадно удаляет chunks/claims через FK ON DELETE CASCADE (см.
@@ -49,12 +50,18 @@ func (r *DocumentRepo) Delete(ctx context.Context, id uuid.UUID) (int64, error) 
 	return res.RowsAffected, res.Error
 }
 
-func ignoreNotFound[T any](v *T, err error) (*T, error) {
+// requireFound маппит gorm.ErrRecordNotFound в типизированный 404
+// (errs.NotFound), прочие ошибки — в 500 (errs.Internal). В отличие от прежнего
+// ignoreNotFound не заглушает "не найдено" в (nil, nil): вызывающему не нужен
+// ручной nil-check, а HTTP-слой сразу получает корректный статус. Важно: сервисы,
+// зовущие GetByID, должны пробрасывать ошибку как есть (return nil, err), а НЕ
+// оборачивать её в ErrTypeInternal — иначе 404 схлопнется в 500.
+func requireFound[T any](v *T, err error, entity string) (*T, error) {
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, nil
+			return nil, errs.NewNotFoundError(entity)
 		}
-		return nil, err
+		return nil, errs.Wrap(err, errs.ErrTypeInternal, "get "+entity)
 	}
 	return v, nil
 }

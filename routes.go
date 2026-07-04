@@ -39,6 +39,7 @@ func initRoutes(app *fiber.App, hm *handlers.Handler) {
 	hypotheses := v1.Group("/hypotheses")
 	hypotheses.Post("/:hypothesisId/feedback", hm.SubmitFeedback)
 	hypotheses.Get("/:hypothesisId/feedback", hm.ListHypothesisFeedback)
+	hypotheses.Put("/:hypothesisId/verification-plan", hm.UpdateVerificationPlan)
 
 	v1.Get("/entities/reputation", hm.ListEntityReputations)
 

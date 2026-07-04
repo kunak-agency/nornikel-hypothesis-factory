@@ -36,7 +36,7 @@ func (r *HypothesisRepo) GetByRunID(ctx context.Context, runID uuid.UUID) ([]dom
 func (r *HypothesisRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Hypothesis, error) {
 	var h domain.Hypothesis
 	err := r.db.WithContext(ctx).First(&h, "id = ?", id).Error
-	return ignoreNotFound(&h, err)
+	return requireFound(&h, err, "hypothesis")
 }
 
 // UpdateScoresAndRank сохраняет пересчитанные Total/Rank после пересортировки
@@ -49,4 +49,18 @@ func (r *HypothesisRepo) UpdateScoresAndRank(ctx context.Context, h *domain.Hypo
 	}
 	return r.db.WithContext(ctx).Model(&domain.Hypothesis{}).Where("id = ?", h.ID).
 		Updates(map[string]any{"scores": scores, "rank": h.Rank}).Error
+}
+
+// UpdateVerificationPlan сохраняет отредактированную пользователем дорожную карту
+// проверки (визуальный конструктор в UI, PUT /hypotheses/{id}/verification-plan).
+// Частичный апдейт одной колонки — как UpdateScoresAndRank, — чтобы не конфликтовать
+// с параллельным rerank (тот пишет scores/rank). Сериализуем в JSON сами: Update по
+// имени колонки обходит GORM-сериализатор (см. UpdateKnowledgeGaps).
+func (r *HypothesisRepo) UpdateVerificationPlan(ctx context.Context, h *domain.Hypothesis) error {
+	plan, err := json.Marshal(h.VerificationPlan)
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&domain.Hypothesis{}).Where("id = ?", h.ID).
+		Update("verification_plan", plan).Error
 }

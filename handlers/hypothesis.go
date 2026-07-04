@@ -48,6 +48,40 @@ func (h *Handler) SubmitFeedback(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(out.FeedbackFromDomain(fb))
 }
 
+// UpdateVerificationPlan сохраняет отредактированную пользователем дорожную карту
+// проверки гипотезы (визуальный конструктор из кейса). Полная замена массива шагов;
+// правится только verificationPlan, остальные поля гипотезы машинные и неизменны.
+// @Summary      Обновление дорожной карты проверки гипотезы
+// @Tags         hypotheses
+// @Accept       json
+// @Produce      json
+// @Param        hypothesisId  path      string                            true  "UUID гипотезы"
+// @Param        body          body      in.UpdateVerificationPlanRequest  true  "Шаги дорожной карты"
+// @Success      200  {object}  out.HypothesisResponse
+// @Failure      404  {object}  errs.Error
+// @Failure      422  {object}  errs.Error
+// @Router       /hypotheses/{hypothesisId}/verification-plan [put]
+func (h *Handler) UpdateVerificationPlan(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("hypothesisId"))
+	if err != nil {
+		return errs.NewValidationError("invalid hypothesisId")
+	}
+
+	var body in.UpdateVerificationPlanRequest
+	if err := c.BodyParser(&body); err != nil {
+		return errs.NewBadRequestError("invalid json")
+	}
+	if err := h.validate.Struct(&body); err != nil {
+		return err
+	}
+
+	hyp, err := h.services.Pipeline.UpdateVerificationPlan(c.UserContext(), id, body.ToDomain())
+	if err != nil {
+		return err
+	}
+	return c.JSON(out.HypothesisFromDomain(hyp))
+}
+
 // ListHypothesisFeedback возвращает все экспертные оценки гипотезы.
 // @Summary      Оценки гипотезы
 // @Tags         hypotheses
