@@ -6,4 +6,5 @@ __pycache__/
 .venv/
 /db/*.sql
 /db/*.sql.gz
-/documentation/
+# Локальные материалы разработки (планы, доки, отчёты) — не коммитим
+/agency/

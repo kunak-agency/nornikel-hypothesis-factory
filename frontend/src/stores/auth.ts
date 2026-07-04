@@ -9,8 +9,8 @@ const TOKEN_KEY = 'hf-auth'
 
 // Статичный профиль (ролей нет, пользователь один).
 export const CURRENT_USER = {
-  initials: 'ИС',
-  name: 'Игорь Соколов',
+  initials: 'ЮР',
+  name: 'Юрий Рокотов',
   role: 'Металлург · R&D',
 }
 

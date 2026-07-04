@@ -5,6 +5,7 @@ import { Icon } from '@iconify/vue'
 import { Toaster } from 'vue-sonner'
 
 import { useAuthStore } from '@/stores/auth'
+import ModelSwitcher from '@/components/ui/ModelSwitcher.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -105,13 +106,7 @@ function onLogout() {
             <span class="font-medium text-body">{{ crumb }}</span>
           </div>
           <div class="flex-1"></div>
-          <div
-            class="btn btn-secondary px-3 py-1.5 text-[12.5px]"
-            title="Рабочее пространство (концепт UI)"
-          >
-            <span class="size-1.5 rounded-full bg-ok"></span>
-            <span class="mono">RnD-1</span>
-          </div>
+          <ModelSwitcher />
         </header>
 
         <main class="flex-1 overflow-y-auto px-7 py-7">
