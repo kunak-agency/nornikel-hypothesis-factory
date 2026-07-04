@@ -4,87 +4,124 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { Toaster } from 'vue-sonner'
 
-import { useTheme } from '@/composables/useTheme'
 import { useAuthStore } from '@/stores/auth'
 
-const { isDark, toggle } = useTheme()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-// На публичных страницах (логин) прячем оболочку — вьюха рисует себя целиком.
-const showChrome = computed(() => !route.meta.public)
+// На публичных страницах (вход) оболочку не рисуем — вьюха рисует себя целиком.
+const showShell = computed(() => !route.meta.public)
+
+// Пункты бокового меню «Платформа» (спец. 01): Исследования → Генератор → База знаний.
+const nav = [
+  { to: '/', label: 'Исследования', icon: 'lucide:flask-conical' },
+  { to: '/generator', label: 'Генератор', icon: 'lucide:lightbulb' },
+  { to: '/knowledge', label: 'База знаний', icon: 'lucide:database' },
+]
+
+// Хлебная крошка контекста для верхней панели.
+const crumb = computed(() => (route.meta.crumb as string) || 'Исследования')
 
 function onLogout() {
   auth.logout()
   router.push({ name: 'login' })
 }
-
-const links = [
-  { to: '/runs', label: 'Прогоны', icon: 'lucide:flask-conical' },
-  { to: '/runs/new', label: 'Новый прогон', icon: 'lucide:plus' },
-  { to: '/documents', label: 'База знаний', icon: 'lucide:book-open' },
-]
 </script>
 
 <template>
-  <div class="min-h-screen">
-    <header
-      v-if="showChrome"
-      class="flex items-center justify-between gap-6 border-b border-border px-6 py-4"
-    >
-      <RouterLink to="/" class="flex items-center gap-2 text-lg font-bold text-text">
-        <Icon icon="lucide:atom" class="size-5 text-brand" />
-        Фабрика гипотез
-      </RouterLink>
-
-      <nav class="flex items-center gap-1">
-        <RouterLink
-          v-for="link in links"
-          :key="link.to"
-          :to="link.to"
-          class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted transition-colors hover:bg-surface hover:text-text"
-          active-class="!text-brand font-semibold"
-        >
-          <Icon :icon="link.icon" class="size-4" />
-          {{ link.label }}
+  <template v-if="showShell">
+    <div class="flex h-screen">
+      <!-- SIDEBAR -->
+      <aside class="flex w-[248px] shrink-0 flex-col border-r border-bd bg-white">
+        <RouterLink to="/" class="flex h-14 items-center border-b border-bd px-4">
+          <img src="/nornickel.png" alt="НОРНИКЕЛЬ" class="h-[26px]" />
         </RouterLink>
 
-        <button
-          type="button"
-          class="ml-2 flex size-9 items-center justify-center rounded-md border border-border bg-surface text-muted transition-colors hover:text-text"
-          :aria-label="isDark ? 'Светлая тема' : 'Тёмная тема'"
-          @click="toggle"
-        >
-          <Icon :icon="isDark ? 'lucide:sun' : 'lucide:moon'" class="size-4" />
-        </button>
-
-        <div v-if="auth.user" class="ml-2 flex items-center gap-2 border-l border-border pl-3">
-          <span
-            class="flex size-8 items-center justify-center rounded-full bg-brand/15 text-xs font-semibold text-brand"
-            :title="auth.user.email"
+        <!-- Поиск — декоративная заглушка (глобального поиска в API нет). -->
+        <div class="px-3 pt-3">
+          <div
+            class="flex items-center gap-2 rounded-[10px] bg-muted px-2.5 py-2 text-faint"
+            title="Глобальный поиск (появится позже)"
           >
-            {{ auth.user.name.charAt(0).toUpperCase() }}
-          </span>
-          <span class="hidden text-sm text-muted sm:inline">{{ auth.user.name }}</span>
+            <Icon icon="lucide:search" class="size-[15px]" />
+            <span class="text-[13px]">Поиск</span>
+            <span class="mono ml-auto rounded border border-bds px-1.5 py-0.5 text-[11px]">⌘K</span>
+          </div>
+        </div>
+
+        <nav class="flex flex-col gap-0.5 px-3 pt-4">
+          <div class="lbl px-2.5 pb-1.5">Платформа</div>
+          <RouterLink
+            v-for="item in nav"
+            :key="item.to"
+            :to="item.to"
+            class="nav-i"
+            active-class="on"
+            :aria-current="route.path === item.to ? 'page' : undefined"
+          >
+            <Icon :icon="item.icon" class="size-[17px]" />
+            {{ item.label }}
+          </RouterLink>
+        </nav>
+
+        <div class="mt-auto p-3">
+          <!-- Защищённый контур — постоянное напоминание о закрытом периметре. -->
+          <div class="rounded-xl border border-bd bg-white p-3">
+            <div class="mb-1.5 flex items-center gap-1.5">
+              <span class="size-1.5 rounded-full bg-ok"></span>
+              <span class="text-[12px] font-semibold text-body">Защищённый контур</span>
+            </div>
+            <div class="text-[11px] leading-relaxed text-faint">Данные не покидают периметр.</div>
+          </div>
+
+          <!-- Блок пользователя (статичный: ролей и авторизации на бэке нет). -->
           <button
             type="button"
-            class="flex size-9 items-center justify-center rounded-md border border-border bg-surface text-muted transition-colors hover:text-red-500"
-            aria-label="Выйти"
-            title="Выйти"
+            class="mt-2 flex w-full items-center gap-2.5 rounded-[10px] px-2 py-2 transition hover:bg-muted"
             @click="onLogout"
+            title="Выйти"
           >
-            <Icon icon="lucide:log-out" class="size-4" />
+            <span
+              class="mono grid size-8 place-items-center rounded-full bg-ink text-[11px] font-semibold text-white"
+            >
+              {{ auth.user.initials }}
+            </span>
+            <span class="flex-1 text-left leading-tight">
+              <span class="block text-[13px] font-semibold text-ink">{{ auth.user.name }}</span>
+              <span class="block text-[11px] text-faint">{{ auth.user.role }}</span>
+            </span>
+            <Icon icon="lucide:log-out" class="size-[15px] text-faint" />
           </button>
         </div>
-      </nav>
-    </header>
+      </aside>
 
-    <main v-if="showChrome" class="mx-auto max-w-5xl px-6 py-6">
-      <RouterView />
-    </main>
-    <RouterView v-else />
+      <!-- MAIN -->
+      <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header class="flex h-14 shrink-0 items-center gap-4 border-b border-bd bg-bg px-7">
+          <div class="flex items-center gap-2 text-[13px]">
+            <span class="text-faint">Проект</span>
+            <span class="text-faint">/</span>
+            <span class="font-medium text-body">{{ crumb }}</span>
+          </div>
+          <div class="flex-1"></div>
+          <div
+            class="btn btn-secondary px-3 py-1.5 text-[12.5px]"
+            title="Рабочее пространство (концепт UI)"
+          >
+            <span class="size-1.5 rounded-full bg-ok"></span>
+            <span class="mono">RnD-1</span>
+          </div>
+        </header>
 
-    <Toaster position="top-right" rich-colors close-button />
-  </div>
+        <main class="flex-1 overflow-y-auto px-7 py-7">
+          <RouterView />
+        </main>
+      </div>
+    </div>
+  </template>
+
+  <RouterView v-else />
+
+  <Toaster position="top-right" rich-colors close-button />
 </template>
