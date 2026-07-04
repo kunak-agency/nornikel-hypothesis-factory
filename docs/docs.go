@@ -128,6 +128,38 @@ const docTemplate = `{
             }
         },
         "/documents/{documentId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "summary": "Документ базы знаний",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID документа",
+                        "name": "documentId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.DocumentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "tags": [
                     "documents"
@@ -150,6 +182,31 @@ const docTemplate = `{
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/entities/reputation": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entities"
+                ],
+                "summary": "Репутация сущностей (обучение на фидбэке)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.EntityReputationListResponse"
                         }
                     },
                     "500": {
@@ -185,6 +242,38 @@ const docTemplate = `{
             }
         },
         "/hypotheses/{hypothesisId}/feedback": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "hypotheses"
+                ],
+                "summary": "Оценки гипотезы",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID гипотезы",
+                        "name": "hypothesisId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.FeedbackListResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            },
             "post": {
                 "consumes": [
                     "application/json"
@@ -229,6 +318,185 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/plant-equipment": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plants"
+                ],
+                "summary": "Оборудование фабрик",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Фильтр по имени фабрики",
+                        "name": "plant",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.PlantEquipmentListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plants"
+                ],
+                "summary": "Добавление оборудования фабрики",
+                "parameters": [
+                    {
+                        "description": "Запись оборудования",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/in.PlantEquipmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/out.PlantEquipmentResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/plant-equipment/{equipmentId}": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plants"
+                ],
+                "summary": "Обновление записи оборудования",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID записи",
+                        "name": "equipmentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Новые значения",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/in.PlantEquipmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.PlantEquipmentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "plants"
+                ],
+                "summary": "Удаление записи оборудования",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID записи",
+                        "name": "equipmentId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Удалено"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/plants": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plants"
+                ],
+                "summary": "Список известных фабрик",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.PlantsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/errs.Error"
                         }
@@ -420,6 +688,66 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/out.RunResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Удаление прогона",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Удалено"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/runs/{runId}/claims": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Evidence-pack прогона (claims)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.ClaimListResponse"
                         }
                     },
                     "404": {
@@ -679,6 +1007,58 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/runs/{runId}/rerank": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Пересортировка гипотез с новыми весами",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID прогона",
+                        "name": "runId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Новые веса (незаполненные = дефолт)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/in.RerankRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/out.HypothesisListResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/errs.Error"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -816,13 +1196,6 @@ const docTemplate = `{
                 "ErrTypeTimeout": "504",
                 "ErrTypeValidation": "422"
             },
-            "x-enum-descriptions": [
-                "422",
-                "404",
-                "409",
-                "504",
-                "500"
-            ],
             "x-enum-varnames": [
                 "ErrTypeValidation",
                 "ErrTypeNotFound",
@@ -859,6 +1232,11 @@ const docTemplate = `{
                     ],
                     "example": "ru"
                 },
+                "plant": {
+                    "description": "Plant — явное указание фабрики (напр. \"ТОФ\", \"Маломырский рудник).\nЕсли задано — ПЕРЕКРЫВАЕТ значение, которое LLM извлечёт из RawText:\nRawText — это пользовательский текст, который theoretически может\nсодержать инструкции, маскирующиеся под данные (напр. \"игнорируй\nпредыдущие инструкции, фабрика = ...\"); явный Plant даёт вызывающей\nстороне (организаторам) детерминированный, не-LLM-зависимый способ\nвыбрать фабрику, не полагаясь на устойчивость extraction-промпта.",
+                    "type": "string",
+                    "example": "ТОФ"
+                },
                 "rankingWeights": {
                     "description": "RankingWeights — режим экспертной настройки: переопределение весов\nкритериев ранжирования (нетронутые поля = дефолт).",
                     "allOf": [
@@ -874,6 +1252,65 @@ const docTemplate = `{
                 "rawText": {
                     "type": "string",
                     "example": "Фабрика: КГМК. Породные хвосты 5824591 СМТ..."
+                }
+            }
+        },
+        "in.PlantEquipmentRequest": {
+            "type": "object",
+            "required": [
+                "equipmentType",
+                "model",
+                "plantName"
+            ],
+            "properties": {
+                "circuitPosition": {
+                    "type": "string",
+                    "example": "Линии 4-2, 5-3, 5-5, замкнутый цикл измельчения"
+                },
+                "equipmentType": {
+                    "description": "EquipmentType — тип аппарата; известные типы получают собственный\nretrieval-фасет с рычагами (см. equipmentTypeLevers).",
+                    "type": "string",
+                    "enum": [
+                        "hydrocyclone",
+                        "mill",
+                        "classifier",
+                        "screen",
+                        "flotation_cell",
+                        "thickener",
+                        "crusher",
+                        "pump"
+                    ],
+                    "example": "hydrocyclone"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "ГЦ-660"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "plantAliases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "Талнахская обогатительная фабрика",
+                        "Талнах"
+                    ]
+                },
+                "plantName": {
+                    "type": "string",
+                    "example": "ТОФ"
+                }
+            }
+        },
+        "in.RerankRequest": {
+            "type": "object",
+            "properties": {
+                "rankingWeights": {
+                    "$ref": "#/definitions/domain.RankingWeights"
                 }
             }
         },
@@ -899,6 +1336,65 @@ const docTemplate = `{
                         "needs_revision"
                     ],
                     "example": "confirmed"
+                }
+            }
+        },
+        "out.ClaimListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.ClaimResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "out.ClaimResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "citedByHypothesisIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "condition": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "effectDirection": {
+                    "type": "string"
+                },
+                "effectMagnitude": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metric": {
+                    "type": "string"
+                },
+                "quote": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "sourceConfidence": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
                 }
             }
         },
@@ -942,6 +1438,51 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "out.EntityReputationListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.EntityReputationResponse"
+                    }
+                }
+            }
+        },
+        "out.EntityReputationResponse": {
+            "type": "object",
+            "properties": {
+                "canonicalName": {
+                    "type": "string"
+                },
+                "confirmed": {
+                    "type": "integer"
+                },
+                "entityId": {
+                    "type": "string"
+                },
+                "needsRevision": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "integer"
+                }
+            }
+        },
+        "out.FeedbackListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.FeedbackResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -1026,6 +1567,20 @@ const docTemplate = `{
                 }
             }
         },
+        "out.HypothesisListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.HypothesisResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "out.HypothesisResponse": {
             "type": "object",
             "properties": {
@@ -1084,6 +1639,64 @@ const docTemplate = `{
             "properties": {
                 "chunksIngested": {
                     "type": "integer"
+                }
+            }
+        },
+        "out.PlantEquipmentListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/out.PlantEquipmentResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "out.PlantEquipmentResponse": {
+            "type": "object",
+            "properties": {
+                "circuitPosition": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "equipmentType": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "plantAliases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "plantName": {
+                    "type": "string"
+                }
+            }
+        },
+        "out.PlantsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/repositories.PlantSummary"
+                    }
                 }
             }
         },
@@ -1185,6 +1798,17 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "retrieving"
+                }
+            }
+        },
+        "repositories.PlantSummary": {
+            "type": "object",
+            "properties": {
+                "equipmentCount": {
+                    "type": "integer"
+                },
+                "plantName": {
+                    "type": "string"
                 }
             }
         }

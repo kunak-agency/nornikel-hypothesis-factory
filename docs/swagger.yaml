@@ -91,12 +91,6 @@ definitions:
       ErrTypeNotFound: "404"
       ErrTypeTimeout: "504"
       ErrTypeValidation: "422"
-    x-enum-descriptions:
-    - "422"
-    - "404"
-    - "409"
-    - "504"
-    - "500"
     x-enum-varnames:
     - ErrTypeValidation
     - ErrTypeNotFound
@@ -125,6 +119,17 @@ definitions:
         - zh
         example: ru
         type: string
+      plant:
+        description: |-
+          Plant — явное указание фабрики (напр. "ТОФ", "Маломырский рудник).
+          Если задано — ПЕРЕКРЫВАЕТ значение, которое LLM извлечёт из RawText:
+          RawText — это пользовательский текст, который theoretически может
+          содержать инструкции, маскирующиеся под данные (напр. "игнорируй
+          предыдущие инструкции, фабрика = ..."); явный Plant даёт вызывающей
+          стороне (организаторам) детерминированный, не-LLM-зависимый способ
+          выбрать фабрику, не полагаясь на устойчивость extraction-промпта.
+        example: ТОФ
+        type: string
       rankingWeights:
         allOf:
         - $ref: '#/definitions/domain.RankingWeights'
@@ -139,6 +144,52 @@ definitions:
         type: string
     required:
     - rawText
+    type: object
+  in.PlantEquipmentRequest:
+    properties:
+      circuitPosition:
+        example: Линии 4-2, 5-3, 5-5, замкнутый цикл измельчения
+        type: string
+      equipmentType:
+        description: |-
+          EquipmentType — тип аппарата; известные типы получают собственный
+          retrieval-фасет с рычагами (см. equipmentTypeLevers).
+        enum:
+        - hydrocyclone
+        - mill
+        - classifier
+        - screen
+        - flotation_cell
+        - thickener
+        - crusher
+        - pump
+        example: hydrocyclone
+        type: string
+      model:
+        example: ГЦ-660
+        type: string
+      parameters:
+        additionalProperties: {}
+        type: object
+      plantAliases:
+        example:
+        - Талнахская обогатительная фабрика
+        - Талнах
+        items:
+          type: string
+        type: array
+      plantName:
+        example: ТОФ
+        type: string
+    required:
+    - equipmentType
+    - model
+    - plantName
+    type: object
+  in.RerankRequest:
+    properties:
+      rankingWeights:
+        $ref: '#/definitions/domain.RankingWeights'
     type: object
   in.SubmitFeedbackRequest:
     properties:
@@ -157,6 +208,45 @@ definitions:
         type: string
     required:
     - verdict
+    type: object
+  out.ClaimListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.ClaimResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  out.ClaimResponse:
+    properties:
+      action:
+        type: string
+      citedByHypothesisIds:
+        items:
+          type: string
+        type: array
+      condition:
+        type: string
+      createdAt:
+        type: string
+      effectDirection:
+        type: string
+      effectMagnitude:
+        type: string
+      id:
+        type: string
+      metric:
+        type: string
+      quote:
+        type: string
+      source:
+        additionalProperties: {}
+        type: object
+      sourceConfidence:
+        type: string
+      subject:
+        type: string
     type: object
   out.DocumentListResponse:
     properties:
@@ -186,6 +276,35 @@ definitions:
         type: string
       title:
         type: string
+    type: object
+  out.EntityReputationListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.EntityReputationResponse'
+        type: array
+    type: object
+  out.EntityReputationResponse:
+    properties:
+      canonicalName:
+        type: string
+      confirmed:
+        type: integer
+      entityId:
+        type: string
+      needsRevision:
+        type: integer
+      rejected:
+        type: integer
+    type: object
+  out.FeedbackListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.FeedbackResponse'
+        type: array
+      total:
+        type: integer
     type: object
   out.FeedbackResponse:
     properties:
@@ -241,6 +360,15 @@ definitions:
           $ref: '#/definitions/out.GraphNodeResponse'
         type: array
     type: object
+  out.HypothesisListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.HypothesisResponse'
+        type: array
+      total:
+        type: integer
+    type: object
   out.HypothesisResponse:
     properties:
       createdAt:
@@ -280,6 +408,44 @@ definitions:
     properties:
       chunksIngested:
         type: integer
+    type: object
+  out.PlantEquipmentListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/out.PlantEquipmentResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  out.PlantEquipmentResponse:
+    properties:
+      circuitPosition:
+        type: string
+      createdAt:
+        type: string
+      equipmentType:
+        type: string
+      id:
+        type: string
+      model:
+        type: string
+      parameters:
+        additionalProperties: {}
+        type: object
+      plantAliases:
+        items:
+          type: string
+        type: array
+      plantName:
+        type: string
+    type: object
+  out.PlantsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/repositories.PlantSummary'
+        type: array
     type: object
   out.ProblemSpecResponse:
     properties:
@@ -348,6 +514,13 @@ definitions:
         $ref: '#/definitions/out.ProblemSpecResponse'
       status:
         example: retrieving
+        type: string
+    type: object
+  repositories.PlantSummary:
+    properties:
+      equipmentCount:
+        type: integer
+      plantName:
         type: string
     type: object
 host: localhost:8080
@@ -459,6 +632,43 @@ paths:
       summary: Удаление документа из базы знаний
       tags:
       - documents
+    get:
+      parameters:
+      - description: UUID документа
+        in: path
+        name: documentId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.DocumentResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Документ базы знаний
+      tags:
+      - documents
+  /entities/reputation:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.EntityReputationListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Репутация сущностей (обучение на фидбэке)
+      tags:
+      - entities
   /health:
     get:
       description: Возвращает {"status":"ok"}, если приложение поднято и обслуживает
@@ -476,6 +686,27 @@ paths:
       tags:
       - health
   /hypotheses/{hypothesisId}/feedback:
+    get:
+      parameters:
+      - description: UUID гипотезы
+        in: path
+        name: hypothesisId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.FeedbackListResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Оценки гипотезы
+      tags:
+      - hypotheses
     post:
       consumes:
       - application/json
@@ -509,6 +740,122 @@ paths:
       summary: Оценка гипотезы экспертом
       tags:
       - hypotheses
+  /plant-equipment:
+    get:
+      parameters:
+      - description: Фильтр по имени фабрики
+        in: query
+        name: plant
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.PlantEquipmentListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Оборудование фабрик
+      tags:
+      - plants
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Запись оборудования
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/in.PlantEquipmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/out.PlantEquipmentResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Добавление оборудования фабрики
+      tags:
+      - plants
+  /plant-equipment/{equipmentId}:
+    delete:
+      parameters:
+      - description: UUID записи
+        in: path
+        name: equipmentId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Удалено
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Удаление записи оборудования
+      tags:
+      - plants
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID записи
+        in: path
+        name: equipmentId
+        required: true
+        type: string
+      - description: Новые значения
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/in.PlantEquipmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.PlantEquipmentResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Обновление записи оборудования
+      tags:
+      - plants
+  /plants:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.PlantsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Список известных фабрик
+      tags:
+      - plants
   /runs:
     get:
       parameters:
@@ -563,6 +910,23 @@ paths:
       tags:
       - runs
   /runs/{runId}:
+    delete:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Удалено
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Удаление прогона
+      tags:
+      - runs
     get:
       parameters:
       - description: UUID прогона
@@ -582,6 +946,28 @@ paths:
           schema:
             $ref: '#/definitions/errs.Error'
       summary: Статус и результат прогона
+      tags:
+      - runs
+  /runs/{runId}/claims:
+    get:
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.ClaimListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Evidence-pack прогона (claims)
       tags:
       - runs
   /runs/{runId}/graph:
@@ -746,6 +1132,40 @@ paths:
           schema:
             $ref: '#/definitions/errs.Error'
       summary: PDF-отчёт по прогону
+      tags:
+      - runs
+  /runs/{runId}/rerank:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID прогона
+        in: path
+        name: runId
+        required: true
+        type: string
+      - description: Новые веса (незаполненные = дефолт)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/in.RerankRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/out.HypothesisListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errs.Error'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/errs.Error'
+      summary: Пересортировка гипотез с новыми весами
       tags:
       - runs
   /runs/from-excel:
