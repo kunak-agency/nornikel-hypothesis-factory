@@ -9,8 +9,14 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # Схема создаётся не отсюда, а Repos.MigrateDB() при старте api
-    # (AutoMigrate по доменным моделям + raw SQL для pgvector/tsvector/HNSW).
+      # Готовый дамп базы знаний: postgres-образ выполняет db/*.sql.gz
+      # ТОЛЬКО при первом старте с пустым volume — свежий `docker compose up`
+      # поднимается сразу с наполненным корпусом, существующие volume'ы дамп
+      # не перетирает. Монтируется каталог, а не файл: без дампа (он не в
+      # git, поставляется с материалами сдачи — см. db/README.md) стек всё
+      # равно поднимается, просто с пустой базой. Остальная схема доводится
+      # Repos.MigrateDB() при старте api.
+      - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
