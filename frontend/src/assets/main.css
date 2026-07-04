@@ -1,0 +1,232 @@
+@import 'tailwindcss';
+
+/*
+  Дизайн-система «НОРНИКЕЛЬ / Фабрика гипотез».
+  Светлая тема (единственная — макет светлый). Токены Tailwind v4 (CSS-first).
+  Палитра из макета «Прил-Генератор»: bg/muted/bd/bds/faint/sec/body/ink/accent.
+*/
+@theme {
+  --color-bg: #f7f7f8;
+  --color-muted: #f1f1f2;
+  --color-bd: #ececee;
+  --color-bds: #e0e0e3;
+  --color-faint: #9a9aa2;
+  --color-sec: #55555e;
+  --color-body: #33333a;
+  --color-ink: #09090b;
+  --color-accent: #2b5cff;
+  --color-accentbg: #eef2ff;
+  --color-ok: #127a4b;
+  --color-warn: #9a6a00;
+  --color-danger: #c2334d;
+
+  --font-sans: 'Golos Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-card: 16px;
+}
+
+:root {
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  body {
+    background: var(--color-bg);
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+  ::selection {
+    background: rgba(43, 92, 255, 0.14);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #dcdce0;
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c4c4cc;
+  }
+}
+
+/* --- Переиспользуемые классы компонентов (перенесены из макета 1:1) --- */
+@layer components {
+  .mono {
+    font-family: var(--font-mono);
+  }
+  .lbl {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-faint);
+    letter-spacing: 0.01em;
+  }
+  .h1 {
+    letter-spacing: -0.02em;
+  }
+  .h2 {
+    letter-spacing: -0.015em;
+  }
+  .h3 {
+    letter-spacing: -0.01em;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--color-bd);
+    border-radius: var(--radius-card);
+    box-shadow: 0 1px 2px rgba(10, 10, 20, 0.04);
+  }
+  .lift {
+    transition:
+      transform 0.22s var(--ease),
+      border-color 0.22s var(--ease),
+      box-shadow 0.22s var(--ease);
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-bds);
+    box-shadow: 0 10px 28px -16px rgba(10, 10, 20, 0.24);
+  }
+
+  .btn {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    border-radius: 10px;
+    transition: all 0.16s var(--ease);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .btn:active {
+    transform: scale(0.985);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: var(--color-ink);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: var(--color-body);
+  }
+  .btn-secondary {
+    background: #fff;
+    color: #18181b;
+    border-color: var(--color-bds);
+    box-shadow: 0 1px 2px rgba(10, 10, 20, 0.04);
+  }
+  .btn-secondary:hover {
+    border-color: #c4c4cc;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-sec);
+  }
+  .btn-ghost:hover {
+    background: var(--color-muted);
+    color: var(--color-ink);
+  }
+
+  .inp {
+    font-family: var(--font-sans);
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--color-bds);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: #18181b;
+    transition:
+      border-color 0.16s,
+      box-shadow 0.16s;
+    outline: none;
+  }
+  .inp::placeholder {
+    color: var(--color-faint);
+  }
+  .inp:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(43, 92, 255, 0.12);
+  }
+
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--color-bd);
+    outline: none;
+    width: 100%;
+  }
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--color-ink);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type='range']::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+
+  .nav-i {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    color: var(--color-sec);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.14s;
+  }
+  .nav-i:hover {
+    background: var(--color-muted);
+    color: var(--color-ink);
+  }
+  .nav-i.on {
+    background: #ededef;
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+  .nav-i svg {
+    opacity: 0.7;
+  }
+  .nav-i.on svg {
+    opacity: 1;
+  }
+
+  .row {
+    transition: background 0.14s;
+  }
+  .row:hover {
+    background: #fafafa;
+  }
+}
+
+@keyframes sp {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Мост токенов в переменные vue-sonner. */
+:root {
+  --normal-bg: #fff;
+  --normal-border: var(--color-bd);
+  --normal-text: var(--color-body);
+}

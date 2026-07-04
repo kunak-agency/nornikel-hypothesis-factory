@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ГИПОТЕЗА</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  fontFamily:{ sans:['Golos Text','sans-serif'], mono:['JetBrains Mono','monospace'] },
+  colors:{
+    bg:'#F7F7F8', muted:'#F1F1F2', bd:'#ECECEE', bds:'#E0E0E3',
+    faint:'#9A9AA2', sec:'#55555E', body:'#33333A', ink:'#09090B',
+    accent:'#2B5CFF', accentbg:'#EEF2FF',
+    ok:'#127A4B', warn:'#9A6A00', danger:'#C2334D',
+  },
+}}}
+</script>
+<style>
+  *{ box-sizing:border-box; }
+  :root{ --ease:cubic-bezier(.16,1,.3,1); }
+  body{ background:#F7F7F8; color:#33333A; -webkit-font-smoothing:antialiased; margin:0; }
+  ::selection{ background:rgba(43,92,255,0.14); }
+  ::-webkit-scrollbar{ width:10px; height:10px; } ::-webkit-scrollbar-thumb{ background:#DCDCE0; border-radius:8px; } ::-webkit-scrollbar-thumb:hover{ background:#C4C4CC; }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+  .lbl{ font-size:12px; font-weight:600; color:#9A9AA2; letter-spacing:.01em; }
+  .h1{ letter-spacing:-.02em; } .h2{ letter-spacing:-.015em; } .h3{ letter-spacing:-.01em; }
+  .card{ background:#fff; border:1px solid #ECECEE; border-radius:16px; box-shadow:0 1px 2px rgba(10,10,20,0.04); }
+  .lift{ transition:transform .22s var(--ease), border-color .22s var(--ease), box-shadow .22s var(--ease); }
+  .lift:hover{ transform:translateY(-2px); border-color:#E0E0E3; box-shadow:0 10px 28px -16px rgba(10,10,20,0.24); }
+  .btn{ font-family:'Golos Text',sans-serif; font-weight:600; border-radius:10px; transition:all .16s var(--ease); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap; border:1px solid transparent; }
+  .btn:active{ transform:scale(.985); }
+  .btn-primary{ background:#09090B; color:#fff; } .btn-primary:hover{ background:#33333A; }
+  .btn-secondary{ background:#fff; color:#18181B; border-color:#E0E0E3; box-shadow:0 1px 2px rgba(10,10,20,0.04); } .btn-secondary:hover{ border-color:#C4C4CC; }
+  .btn-ghost{ background:transparent; color:#55555E; } .btn-ghost:hover{ background:#F1F1F2; color:#09090B; }
+  .inp{ font-family:'Golos Text',sans-serif; width:100%; background:#fff; border:1px solid #E0E0E3; border-radius:10px; padding:9px 12px; font-size:14px; color:#18181B; transition:border-color .16s, box-shadow .16s; outline:none; }
+  .inp::placeholder{ color:#9A9AA2; }
+  .inp:focus{ border-color:#2B5CFF; box-shadow:0 0 0 3px rgba(43,92,255,0.12); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; height:4px; border-radius:99px; background:#ECECEE; outline:none; width:100%; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:#09090B; cursor:pointer; transition:transform .15s; }
+  input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.15); }
+  .nav-i{ display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:10px; color:#55555E; font-size:13.5px; font-weight:500; cursor:pointer; transition:all .14s; }
+  .nav-i:hover{ background:#F1F1F2; color:#09090B; }
+  .nav-i.on{ background:#EDEDEF; color:#09090B; font-weight:600; }
+  .nav-i svg{ opacity:.7; } .nav-i.on svg{ opacity:1; }
+  .row{ transition:background .14s; } .row:hover{ background:#FAFAFA; }
+  @keyframes sp{ to{ transform:rotate(360deg); } }
+  .scr{ display:none; } .scr.on{ display:block; }
+</style>
+</head>
+<body class="font-sans">
+
+  <div class="flex h-screen">
+
+    <!-- SIDEBAR -->
+    <aside class="w-[248px] shrink-0 bg-white border-r border-bd flex flex-col">
+      <div class="flex items-center px-4 h-14 border-b border-bd">
+        <img src="assets/nornickel.png" alt="Норникель" class="h-[26px]">
+      </div>
+
+      <div class="px-3 pt-3">
+        <div class="flex items-center gap-2 px-2.5 py-2 rounded-[10px] bg-muted text-faint">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <span class="text-[13px]">Поиск</span><span class="ml-auto mono text-[11px] border border-bds rounded px-1.5 py-0.5">⌘K</span>
+        </div>
+      </div>
+
+      <nav class="flex flex-col gap-0.5 px-3 pt-4">
+        <div class="lbl px-2.5 pb-1.5">Платформа</div>
+        <div class="nav-i on" data-s="generate"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.5.4.9 1 .9 1.6h5.2c0-.6.4-1.2.9-1.6A6 6 0 0 0 12 3z"/></svg>Генератор</div>
+        <div class="nav-i" data-s="knowledge"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5" rx="7.5" ry="2.8"/><path d="M4.5 5v6c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8V5M4.5 11v6c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8v-6"/></svg>База знаний</div>
+        <div class="nav-i" data-s="research"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3h6M10 3v5l-4.5 8a1.8 1.8 0 0 0 1.6 2.7h9.8A1.8 1.8 0 0 0 18.5 16L14 8V3M8 14h8"/></svg>Исследование</div>
+        <div class="nav-i" data-s="models"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="7" width="10" height="10" rx="1.4"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/></svg>Модели</div>
+      </nav>
+
+      <div class="mt-auto p-3">
+        <div class="rounded-xl border border-bd p-3 bg-white">
+          <div class="flex items-center gap-1.5 mb-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="text-[12px] font-semibold text-body">Защищённый контур</span></div>
+          <div class="text-[11px] text-faint leading-relaxed">Данные не покидают периметр.</div>
+        </div>
+        <button class="flex items-center gap-2.5 w-full mt-2 px-2 py-2 rounded-[10px] hover:bg-muted transition">
+          <span class="w-8 h-8 rounded-full bg-ink text-white grid place-items-center mono text-[11px] font-semibold">ИС</span>
+          <span class="flex-1 text-left leading-tight"><span class="block text-[13px] font-semibold text-ink">Игорь Соколов</span><span class="block text-[11px] text-faint">Металлург · R&D</span></span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9A9AA2" stroke-width="1.8"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+
+      <!-- top bar -->
+      <header class="h-14 shrink-0 bg-bg border-b border-bd flex items-center gap-4 px-7">
+        <div class="flex items-center gap-2 text-[13px]"><span class="text-faint">Проект</span><span class="text-faint">/</span><span class="font-medium text-body">Жаропрочные сплавы</span></div>
+        <div class="flex-1"></div>
+        <div class="relative">
+          <button onclick="document.getElementById('mMenu').classList.toggle('hidden')" class="btn btn-secondary px-3 py-1.5 text-[12.5px]"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="mono">RnD-1</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9A9AA2" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg></button>
+          <div id="mMenu" class="hidden absolute top-11 right-0 w-64 p-1.5 bg-white rounded-xl z-40" style="box-shadow:0 16px 40px -12px rgba(10,10,20,0.22),0 0 0 1px #ECECEE">
+            <div class="lbl px-2.5 py-2">Модель</div>
+            <button class="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg hover:bg-muted text-left"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><div class="flex-1"><div class="text-[13px] font-medium text-ink">Норникель RnD-1</div><div class="text-[11px] text-faint">локальная · 34B</div></div><span class="text-accent text-[13px]">✓</span></button>
+            <button class="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg hover:bg-muted text-left"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><div class="flex-1"><div class="text-[13px] font-medium text-body">Llama 3.1 70B</div><div class="text-[11px] text-faint">локальная</div></div></button>
+            <button class="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg hover:bg-muted text-left"><span class="w-1.5 h-1.5 rounded-full bg-warn"></span><div class="flex-1"><div class="text-[13px] font-medium text-body">GPT-4o</div><div class="text-[11px] text-faint">внешняя · по согласованию</div></div></button>
+          </div>
+        </div>
+        <button class="w-8 h-8 rounded-full border border-bds bg-white grid place-items-center text-faint hover:text-ink transition"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.7M12 17h.01"/></svg></button>
+      </header>
+
+      <main class="flex-1 overflow-y-auto px-7 py-7">
+
+        <!-- ========== GENERATE ========== -->
+        <section class="scr on" data-screen="generate">
+          <div class="flex items-end gap-4 mb-6">
+            <div><h1 class="h1 text-[26px] font-extrabold text-ink mb-1">Генератор гипотез</h1><p id="profileSub" class="text-[14px] text-sec">Профиль: Металлург · жаропрочные сплавы</p></div>
+            <div class="flex-1"></div>
+            <button class="btn btn-ghost px-3.5 py-2.5 text-[13.5px]">История</button>
+            <button id="genBtn" class="btn btn-primary px-5 py-2.5 text-[14px]" onclick="openProfile()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg>Сгенерировать</button>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 items-start">
+            <div class="card p-6">
+              <div class="lbl mb-2">Целевое свойство</div>
+              <textarea class="inp mb-5" rows="3">Повысить жаропрочность сплава ХН70 на 15 % без роста себестоимости выше +5 %</textarea>
+
+              <div class="flex items-center justify-between mb-2"><span class="lbl">Документы для анализа</span><span id="docN" class="mono text-[11px] text-faint">0</span></div>
+              <div id="docList" class="flex flex-col gap-1.5 mb-2"></div>
+              <label class="flex items-center justify-center gap-2 w-full py-2.5 mb-5 rounded-[10px] border border-dashed border-bds text-[12.5px] text-sec hover:border-ink hover:text-ink cursor-pointer transition" style="border-style:dashed">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>Загрузить документы
+                <input id="docInput" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.txt,.csv" class="hidden">
+              </label>
+
+              <div class="h-px bg-bd my-1"></div>
+              <button id="advBtn" onclick="toggleAdv()" class="flex items-center gap-2 w-full py-2.5 text-[13px] font-medium text-sec hover:text-ink transition">
+                <svg id="advChev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform .2s"><path d="M9 6l6 6-6 6"/></svg>
+                Продвинутые настройки
+                <span class="ml-auto text-[11px] text-faint hidden xl:inline">ограничения · источники · веса</span>
+              </button>
+              <div id="advanced" class="hidden pt-4">
+              <div class="lbl mb-2">Ограничения</div>
+              <div class="grid grid-cols-2 gap-2 mb-5">
+                <div class="rounded-[10px] border border-bd px-3 py-2.5"><div class="text-[11px] text-faint mb-0.5">Сырьё</div><div class="text-[13px] font-medium text-body">Ni, Cr, Nb, Co</div></div>
+                <div class="rounded-[10px] border border-bd px-3 py-2.5"><div class="text-[11px] text-faint mb-0.5">Бюджет</div><div class="text-[13px] font-medium text-body mono">≤ 12 млн ₽</div></div>
+                <div class="rounded-[10px] border border-bd px-3 py-2.5"><div class="text-[11px] text-faint mb-0.5">Оборуд.</div><div class="text-[13px] font-medium text-body">ВИП · отжиг</div></div>
+                <div class="rounded-[10px] border border-bd px-3 py-2.5"><div class="text-[11px] text-faint mb-0.5">Норматив</div><div class="text-[13px] font-medium text-body mono">ГОСТ 5632</div></div>
+              </div>
+              <div class="lbl mb-2">Источники знаний</div>
+              <div class="flex flex-wrap gap-2 mb-6">
+                <span class="text-[12px] px-2.5 py-1 rounded-full bg-accentbg text-accent border border-accent/20">Патенты RU/CN</span>
+                <span class="text-[12px] px-2.5 py-1 rounded-full bg-accentbg text-accent border border-accent/20">Отчёты ЛМ</span>
+                <span class="text-[12px] px-2.5 py-1 rounded-full border border-bds text-sec">Scopus</span>
+                <span class="text-[12px] px-2.5 py-1 rounded-full border border-bds text-sec">+3</span>
+              </div>
+              <div class="lbl mb-3">Веса критериев</div>
+              <div class="space-y-4">
+                <div><div class="flex justify-between mb-1.5 text-[12.5px]"><span class="text-body">Новизна</span><span class="mono text-ink" data-v>72</span></div><input type="range" min="0" max="100" value="72" oninput="this.closest('div').querySelector('[data-v]').textContent=this.value"></div>
+                <div><div class="flex justify-between mb-1.5 text-[12.5px]"><span class="text-body">Реализуемость</span><span class="mono text-ink" data-v>60</span></div><input type="range" min="0" max="100" value="60" oninput="this.closest('div').querySelector('[data-v]').textContent=this.value"></div>
+                <div><div class="flex justify-between mb-1.5 text-[12.5px]"><span class="text-body">Ценность</span><span class="mono text-ink" data-v>88</span></div><input type="range" min="0" max="100" value="88" oninput="this.closest('div').querySelector('[data-v]').textContent=this.value"></div>
+              </div>
+              </div>
+            </div>
+            <div class="min-h-[520px]">
+              <div id="idle" class="h-[520px] card border-dashed flex flex-col items-center justify-center text-center" style="border-style:dashed">
+                <div class="w-11 h-11 rounded-full border border-bds grid place-items-center mb-4"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9A9AA2" stroke-width="1.7"><path d="M5 3l14 9-14 9V3z"/></svg></div>
+                <div class="text-[15px] font-semibold text-ink mb-1.5">Готово к генерации</div>
+                <p class="text-[13.5px] text-sec max-w-[320px]">Укажите цель, загрузите документы и нажмите «Сгенерировать» — гипотезы появятся здесь.</p>
+              </div>
+              <div id="gen" class="hidden card p-6">
+                <div class="flex items-center gap-2.5 mb-4"><span class="w-1.5 h-1.5 rounded-full bg-ink"></span><span class="lbl text-body">Анализ <span id="docCount">3</span> документов · граф знаний</span><span id="gpct" class="ml-auto mono text-[14px] text-ink">0%</span></div>
+                <div class="h-1 rounded-full bg-muted overflow-hidden mb-6"><div id="gbar" class="h-full bg-ink rounded-full" style="width:0%;transition:width .5s var(--ease)"></div></div>
+                <div id="stepper" class="flex flex-col gap-1"></div>
+              </div>
+              <div id="res" class="hidden">
+                <div class="flex items-center gap-3 mb-4">
+                  <span class="text-[14px] font-semibold text-ink">4 гипотезы</span><span class="text-[12.5px] text-faint">ранжировано · RnD-1</span>
+                  <div class="flex-1"></div>
+                  <button class="btn btn-secondary px-3 py-1.5 text-[12.5px]">Экспорт PDF</button>
+                  <button class="btn btn-secondary px-3 py-1.5 text-[12.5px]">В YouTrack</button>
+                </div>
+                <div id="cards" class="flex flex-col gap-3"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== KNOWLEDGE ========== -->
+        <section class="scr" data-screen="knowledge">
+          <div class="flex items-end gap-4 mb-6">
+            <div><h1 class="h1 text-[26px] font-extrabold text-ink mb-1">База знаний</h1><p class="text-[14px] text-sec">Граф Neo4j · 6 предметных доменов</p></div>
+            <div class="flex-1"></div>
+            <button id="ingBtn" class="btn btn-primary px-5 py-2.5 text-[14px]" onclick="ingest()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Добавить документ</button>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+            <div class="card lift p-5"><div class="mono text-[24px] font-semibold text-ink" data-count="21400">0</div><div class="lbl mt-1.5">документов</div></div>
+            <div class="card lift p-5"><div class="mono text-[24px] font-semibold text-ink">1.24M</div><div class="lbl mt-1.5">сущностей</div></div>
+            <div class="card lift p-5"><div class="mono text-[24px] font-semibold text-ink">4.7M</div><div class="lbl mt-1.5">связей</div></div>
+            <div class="card lift p-5"><div class="mono text-[24px] font-semibold text-ink" data-count="6">0</div><div class="lbl mt-1.5">доменов</div></div>
+          </div>
+          <div class="grid md:grid-cols-[380px_1fr] gap-5 items-start">
+            <div>
+              <div class="card p-6 text-center" style="border-style:dashed">
+                <div class="w-12 h-12 mx-auto rounded-xl bg-muted grid place-items-center mb-3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#55555E" stroke-width="1.7"><path d="M12 15V3M7 8l5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+                <div class="text-[14px] font-semibold text-ink mb-1">Перетащите файлы</div>
+                <p class="text-[12.5px] text-faint mb-4">PDF · DOCX · XLSX · CSV · BibTeX</p>
+                <div class="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] border border-bd text-[12.5px]"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A9AA2" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Технология_плавки_2023.pdf</div>
+              </div>
+              <div id="ingPanel" class="hidden card p-5 mt-4">
+                <div class="flex items-center gap-2.5 mb-4"><span class="w-1.5 h-1.5 rounded-full bg-ink"></span><span class="lbl text-body">Обработка</span></div>
+                <div class="h-1 rounded-full bg-muted overflow-hidden mb-5"><div id="ingBar" class="h-full bg-ink rounded-full" style="width:0%;transition:width .5s var(--ease)"></div></div>
+                <div id="ingStepper" class="flex flex-col gap-1"></div>
+                <div id="ingDone" class="hidden flex items-center gap-2.5 mt-3 px-3.5 py-2.5 rounded-[10px] bg-muted"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#127A4B" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span class="text-[12.5px] text-body">Добавлено · +342 сущности</span></div>
+              </div>
+            </div>
+            <div class="card overflow-hidden">
+              <div class="px-5 py-3.5 border-b border-bd lbl">Подключённые источники</div>
+              <div id="sourceList"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== RESEARCH ========== -->
+        <section class="scr" data-screen="research">
+          <div class="mb-6"><h1 class="h1 text-[26px] font-extrabold text-ink mb-1">Исследование и симуляция</h1><p class="text-[14px] text-sec">Проверка пригодности гипотезы до эксперимента</p></div>
+          <div class="grid md:grid-cols-[320px_1fr] gap-5 items-start">
+            <div class="card p-5">
+              <div class="lbl mb-3">Выберите гипотезу</div>
+              <div id="simPick" class="flex flex-col gap-2 mb-4"></div>
+              <button id="simBtn" class="btn btn-primary w-full py-2.5 text-[14px]" onclick="runSim()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg>Запустить симуляцию</button>
+            </div>
+            <div class="min-h-[460px]">
+              <div id="simIdle" class="h-[460px] card border-dashed flex flex-col items-center justify-center text-center" style="border-style:dashed">
+                <div class="w-11 h-11 rounded-full border border-bds grid place-items-center mb-4"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9A9AA2" stroke-width="1.7"><path d="M9 3h6M10 3v5l-4.5 8a1.8 1.8 0 0 0 1.6 2.7h9.8A1.8 1.8 0 0 0 18.5 16L14 8V3"/></svg></div>
+                <div class="text-[15px] font-semibold text-ink mb-1.5" id="simTitle">Микролегирование ниобием сплава ХН70</div>
+                <p class="text-[13.5px] text-sec max-w-[340px]">CALPHAD · ML-предсказание · Monte-Carlo, затем протокол проверки.</p>
+              </div>
+              <div id="simRun" class="hidden card p-6">
+                <div class="flex items-center gap-2.5 mb-4"><span class="w-1.5 h-1.5 rounded-full bg-ink"></span><span class="lbl text-body">Симуляция пригодности</span><span id="simPct" class="ml-auto mono text-[14px] text-ink">0%</span></div>
+                <div class="h-1 rounded-full bg-muted overflow-hidden mb-6"><div id="simBar" class="h-full bg-ink rounded-full" style="width:0%;transition:width .5s var(--ease)"></div></div>
+                <div id="simStepper" class="flex flex-col gap-1"></div>
+              </div>
+              <div id="simResult" class="hidden">
+                <div class="flex gap-4 mb-4">
+                  <div class="flex-1 card p-5">
+                    <div class="flex items-center gap-2.5 mb-2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#127A4B" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg><span class="text-[15px] font-bold text-ink">Гипотеза пригодна</span></div>
+                    <p class="text-[13px] leading-relaxed text-sec">Симуляция подтверждает целевой эффект. Рекомендован эксперимент с приоритетом <b class="text-body">высокий</b>.</p>
+                  </div>
+                  <div class="w-[150px] shrink-0 card p-5 text-center"><div class="mono text-[32px] font-semibold text-ink">87%</div><div class="lbl mt-1">достоверность</div></div>
+                </div>
+                <div class="card p-5 mb-4">
+                  <div class="lbl mb-4">Прогноз по KPI</div>
+                  <div class="mb-3"><div class="flex justify-between text-[12.5px] mb-1.5"><span>Предсказано</span><span class="mono text-ink">+17.2% (±2.1)</span></div><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-accent rounded-full" style="width:87%"></div></div></div>
+                  <div><div class="flex justify-between text-[12.5px] mb-1.5"><span class="text-faint">Цель</span><span class="mono text-faint">+15.0%</span></div><div class="h-1.5 rounded-full bg-muted overflow-hidden"><div class="h-full bg-bds rounded-full" style="width:100%"></div></div></div>
+                </div>
+                <div class="card p-5">
+                  <div class="lbl mb-4">Дорожная карта проверки</div>
+                  <div class="flex items-stretch">
+                    <div class="flex-1 text-center"><div class="w-8 h-8 mx-auto mb-2 rounded-full bg-ink text-white grid place-items-center mono text-[12px]">1</div><div class="text-[12px] font-medium text-body">Выплавка</div><div class="text-[10.5px] text-faint">2 нед</div></div>
+                    <div class="flex-1 text-center"><div class="w-8 h-8 mx-auto mb-2 rounded-full bg-ink text-white grid place-items-center mono text-[12px]">2</div><div class="text-[12px] font-medium text-body">Термообработка</div><div class="text-[10.5px] text-faint">1 нед</div></div>
+                    <div class="flex-1 text-center"><div class="w-8 h-8 mx-auto mb-2 rounded-full bg-ink text-white grid place-items-center mono text-[12px]">3</div><div class="text-[12px] font-medium text-body">Испытания</div><div class="text-[10.5px] text-faint">3 нед</div></div>
+                    <div class="flex-1 text-center"><div class="w-8 h-8 mx-auto mb-2 rounded-full border-2 border-accent grid place-items-center"><span class="w-2 h-2 rounded-full bg-accent"></span></div><div class="text-[12px] font-medium text-body">Валидация</div><div class="text-[10.5px] text-faint">≥+15%</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== MODELS ========== -->
+        <section class="scr" data-screen="models">
+          <div class="mb-6"><h1 class="h1 text-[26px] font-extrabold text-ink mb-1">Модели</h1><p class="text-[14px] text-sec">Локальный контур и внешние модели</p></div>
+          <div class="flex items-center gap-2 mb-3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#127A4B" stroke-width="1.9"><path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6z"/></svg><span class="text-[14px] font-semibold text-ink">Локальный контур</span><span class="text-[12px] text-faint">данные не покидают периметр</span></div>
+          <div id="localModels" class="grid md:grid-cols-2 gap-4 mb-7"></div>
+          <div class="flex items-center gap-2 mb-3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9A6A00" stroke-width="1.9"><path d="M18 10h-1.3A7 7 0 1 0 5 15h13a4 4 0 0 0 0-5z"/></svg><span class="text-[14px] font-semibold text-ink">Внешние модели</span><span class="text-[12px] text-faint">через шлюз, по согласованию</span></div>
+          <div id="extModels" class="grid md:grid-cols-3 gap-4 mb-5"></div>
+          <div class="card p-4 flex items-center gap-4">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9A6A00" stroke-width="1.9"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>
+            <div class="flex-1"><div class="text-[13px] font-semibold text-ink">Разрешить внешним моделям конфиденциальные данные</div><div class="text-[11.5px] text-faint">По умолчанию отключено · анонимизация на шлюзе</div></div>
+            <div id="extTg" onclick="this.classList.toggle('on')" class="w-11 h-6 rounded-full p-0.5 cursor-pointer flex items-center bg-bds transition-colors [&.on]:bg-ink"><div class="w-5 h-5 rounded-full bg-white shadow-sm transition-transform [.on>&]:translate-x-5"></div></div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- profile modal -->
+  <div id="profileModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/30" style="backdrop-filter:blur(2px)" onclick="closeProfile()"></div>
+    <div class="relative card w-full max-w-[460px] p-6" style="box-shadow:0 30px 70px -24px rgba(10,10,20,0.4)">
+      <div class="text-[18px] font-bold text-ink mb-1">Профиль специалиста</div>
+      <p class="text-[13px] text-sec mb-5">Гипотезы будут сгенерированы под выбранную роль.</p>
+      <div id="pmList" class="flex flex-col gap-2 mb-6"></div>
+      <div class="flex gap-2 justify-end">
+        <button class="btn btn-ghost px-4 py-2.5 text-[13.5px]" onclick="closeProfile()">Отмена</button>
+        <button class="btn btn-primary px-5 py-2.5 text-[14px]" onclick="confirmProfile()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg>Сгенерировать</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const hyps = [
+  { id:'H1', t:'Микролегирование ниобием сплава ХН70', s:'Добавка 0.3 % Nb с отжигом 1080 °C / 4 ч повысит жаропрочность на ~17 % за счёт дисперсных карбидов MC.', nov:84, risk:['средний','#9A6A00'], val:'+17%', unit:'σ₁₀₀' },
+  { id:'H2', t:'Вторичный концентрат в медной шихте', s:'Ввод 5 % вторичного концентрата при коррекции основности шлака снизит себестоимость на 8 % без падения извлечения.', nov:71, risk:['низкий','#127A4B'], val:'−8%', unit:'себест.' },
+  { id:'H3', t:'Борное упрочнение границ зёрен', s:'Микродобавка 0.002 % B подавит зернограничное проскальзывание и повысит длительную прочность на 9–12 %.', nov:63, risk:['средний','#9A6A00'], val:'+11%', unit:'τ разр.' },
+  { id:'H4', t:'Смешанный собиратель для флотации МПГ', s:'Замена ксантогената на смесь дитиофосфат + тионокарбамат повысит извлечение платиноидов на ~3.5 %.', nov:78, risk:['средний','#9A6A00'], val:'+3.5%', unit:'МПГ' },
+];
+const sources = [
+  ['Обогащение цветных и драгоценных металлов','Учебник','642 с. · 12 480 сущностей', true],
+  ['Патентный массив RU / CN','Патенты','1 284 док. · 84 210 сущностей', true],
+  ['Внутренние отчёты ЛМ · 2018–2024','Отчёты','3 105 док. · 210 940 сущностей', true],
+  ['Scopus · Ni-based superalloys','Статьи','8 940 док. · 640 300 сущностей', true],
+  ['Materials Project · экспорт','Датасет','154 000 записей', false],
+];
+const models = [
+  { n:'Норникель RnD-1', p:'34B', local:true, note:'Дообучена на внутренних отчётах ЛМ', ctx:'128K', lat:'0.9 c', on:true },
+  { n:'Llama 3.1', p:'70B', local:true, note:'On-premise, изолированный контур', ctx:'128K', lat:'1.4 c' },
+  { n:'GPT-4o', p:'—', local:false, note:'OpenAI · требует согласования ИБ' },
+  { n:'Claude 3.5 Sonnet', p:'—', local:false, note:'Anthropic · длинный контекст' },
+  { n:'DeepSeek-R1', p:'671B', local:false, note:'Сильные пошаговые рассуждения' },
+];
+const gSteps = ['Парсинг корпуса документов','Извлечение сущностей и связей','Построение графа знаний','Поиск аналогий и пробелов','Ранжирование гипотез'];
+const iSteps = ['Загрузка и валидация','Извлечение текста · GROBID','NER: материалы · свойства','Запись в граф Neo4j'];
+const sSteps = ['Формализация гипотезы','Подбор аналогов из графа','Термодинамика · CALPHAD','ML-предсказание свойства','Оценка неопределённости'];
+let simSel = 'H1';
+
+function stepHTML(steps, active, running, accent){
+  return steps.map((s,i)=>{
+    const done=i<active, a=i===active&&running;
+    const inner = done?'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':a?`<span class="w-3 h-3 rounded-full inline-block" style="border:2px solid ${accent};border-top-color:transparent;animation:sp .7s linear infinite"></span>`:'';
+    const dot = done?'background:#09090B;border-color:#09090B':a?`border-color:${accent}`:'border-color:#E0E0E3';
+    const tc = done?'#09090B':a?'#09090B':'#9A9AA2';
+    return `<div class="flex items-center gap-3 py-1.5"><span class="w-[22px] h-[22px] rounded-full grid place-items-center shrink-0" style="border:1.5px solid;${dot}">${inner}</span><span class="text-[13.5px]" style="color:${tc}">${s}</span></div>`;
+  }).join('');
+}
+function renderCards(){
+  document.getElementById('cards').innerHTML = hyps.map(h=>`
+    <div class="card lift p-5">
+      <div class="flex items-start gap-4"><span class="mono text-[12px] text-accent pt-0.5">${h.id}</span>
+        <div class="flex-1"><div class="h3 text-[16.5px] font-bold text-ink mb-1.5">${h.t}</div><p class="text-[13.5px] leading-relaxed text-sec">${h.s}</p></div></div>
+      <div class="h-px bg-bd my-4"></div>
+      <div class="flex items-center gap-7">
+        <div class="min-w-[120px]"><div class="flex justify-between mb-1.5"><span class="lbl">Новизна</span><span class="mono text-[12px] text-ink">${h.nov}</span></div><div class="h-1 rounded-full bg-muted overflow-hidden"><div class="h-full bg-accent" style="width:${h.nov}%"></div></div></div>
+        <div><div class="lbl mb-1">Риск</div><span class="inline-flex items-center gap-1.5 text-[13px] font-medium text-body"><span class="w-1.5 h-1.5 rounded-full" style="background:${h.risk[1]}"></span>${h.risk[0]}</span></div>
+        <div class="ml-auto text-right"><div class="mono text-[19px] font-semibold text-ink">${h.val}</div><div class="lbl mt-0.5">${h.unit}</div></div>
+        <button class="btn btn-secondary px-4 py-2 text-[13px]" onclick="gotoSim('${h.id}')">Открыть →</button>
+      </div>
+    </div>`).join('');
+}
+function renderSources(){
+  document.getElementById('sourceList').innerHTML = sources.map((s,i)=>`
+    <div class="row flex items-center gap-4 px-5 py-3.5 ${i?'border-t border-bd':''}">
+      <span class="text-[11px] mono px-2 py-1 rounded-md bg-muted text-sec">${s[1]}</span>
+      <div class="flex-1 min-w-0"><div class="text-[13.5px] font-medium text-ink truncate">${s[0]}</div><div class="text-[11.5px] text-faint">${s[2]}</div></div>
+      <span class="inline-flex items-center gap-1.5 text-[12px] text-sec"><span class="w-1.5 h-1.5 rounded-full" style="background:${s[3]?'#127A4B':'#9A6A00'}"></span>${s[3]?'Проиндексирован':'Синхрон.'}</span>
+    </div>`).join('');
+}
+function renderSimPick(){
+  document.getElementById('simPick').innerHTML = hyps.map(h=>`
+    <button onclick="selSim('${h.id}')" class="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-[10px] border text-left ${h.id===simSel?'border-ink bg-muted':'border-bd bg-white hover:border-bds'}">
+      <span class="mono text-[11px] text-accent">${h.id}</span><span class="text-[12.5px] leading-snug text-body">${h.t}</span></button>`).join('');
+}
+function modelCard(m,i,small){
+  return `<div class="card ${small?'p-4':'p-5'}">
+    <div class="flex items-center gap-2.5 mb-2.5"><span class="w-2 h-2 rounded-full" style="background:${m.local?'#127A4B':'#9A6A00'}"></span>
+      <span class="font-bold text-[${small?'13.5':'15'}px] text-ink">${m.n}</span>${!small?`<span class="mono text-[11px] text-faint">${m.p}</span>`:''}<div class="flex-1"></div>
+      ${m.on?'<span class="text-[10.5px] font-semibold px-2 py-0.5 rounded bg-ink text-white">Активна</span>':''}</div>
+    <p class="text-[${small?'11.5':'12.5'}px] text-sec leading-relaxed mb-3">${m.note}</p>
+    ${!small?`<div class="flex gap-5 mb-4"><div><div class="lbl">Контекст</div><div class="mono text-[13px] text-body">${m.ctx}</div></div><div><div class="lbl">Задержка</div><div class="mono text-[13px] text-body">${m.lat}</div></div></div>`:''}
+    <button onclick="selModel(${i})" class="btn ${m.on?'btn-secondary':'btn-secondary'} w-full py-2 text-[12.5px]">${m.on?'Активна':'Выбрать'}</button></div>`;
+}
+function renderModels(){
+  document.getElementById('localModels').innerHTML = models.map((m,i)=>m.local?modelCard(m,i,false):'').join('');
+  document.getElementById('extModels').innerHTML = models.map((m,i)=>!m.local?modelCard(m,i,true):'').join('');
+}
+function selModel(i){ models.forEach(m=>m.on=false); models[i].on=true; renderModels(); }
+
+// nav
+function switchScreen(name){
+  document.querySelectorAll('.scr').forEach(s=>s.classList.toggle('on', s.dataset.screen===name));
+  document.querySelectorAll('.nav-i').forEach(n=>n.classList.toggle('on', n.dataset.s===name));
+  document.querySelector('main').scrollTop = 0;
+}
+document.querySelectorAll('.nav-i').forEach(n=>n.addEventListener('click',()=>switchScreen(n.dataset.s)));
+function gotoSim(id){ selSim(id); switchScreen('research'); }
+function selSim(id){ simSel=id; document.getElementById('simTitle').textContent=hyps.find(h=>h.id===id).t; renderSimPick();
+  document.getElementById('simRun').classList.add('hidden'); document.getElementById('simResult').classList.add('hidden'); document.getElementById('simIdle').classList.remove('hidden'); }
+
+// flows
+function runStepper(steps, contId, barId, pctId, accent, doneCb){
+  let i=0; const cont=document.getElementById(contId), bar=barId&&document.getElementById(barId), pct=pctId&&document.getElementById(pctId);
+  cont.innerHTML=stepHTML(steps,0,true,accent); if(bar)bar.style.width='0%'; if(pct)pct.textContent='0%';
+  const t=setInterval(()=>{ i++;
+    if(i>steps.length){ clearInterval(t); cont.innerHTML=stepHTML(steps,steps.length,false,accent); if(bar)bar.style.width='100%'; if(pct)pct.textContent='100%'; doneCb&&doneCb(); return; }
+    cont.innerHTML=stepHTML(steps,i,true,accent); const p=Math.round(i/steps.length*100); if(bar)bar.style.width=p+'%'; if(pct)pct.textContent=p+'%';
+  },640);
+}
+let gBusy=false;
+function generate(){ if(gBusy)return; gBusy=true;
+  document.getElementById('idle').classList.add('hidden'); document.getElementById('res').classList.add('hidden'); document.getElementById('gen').classList.remove('hidden');
+  const b=document.getElementById('genBtn'); b.style.opacity='.5'; b.style.pointerEvents='none';
+  runStepper(gSteps,'stepper','gbar','gpct','#2B5CFF',()=>{ document.getElementById('gen').classList.add('hidden'); document.getElementById('res').classList.remove('hidden'); renderCards(); gBusy=false; b.style.opacity=''; b.style.pointerEvents=''; });
+}
+let iBusy=false;
+function ingest(){ if(iBusy)return; iBusy=true;
+  document.getElementById('ingPanel').classList.remove('hidden'); document.getElementById('ingDone').classList.add('hidden');
+  const b=document.getElementById('ingBtn'); b.style.opacity='.5'; b.style.pointerEvents='none';
+  runStepper(iSteps,'ingStepper','ingBar',null,'#2B5CFF',()=>{ document.getElementById('ingDone').classList.remove('hidden'); iBusy=false; b.style.opacity=''; b.style.pointerEvents=''; });
+}
+let sBusy=false;
+function runSim(){ if(sBusy)return; sBusy=true;
+  document.getElementById('simIdle').classList.add('hidden'); document.getElementById('simResult').classList.add('hidden'); document.getElementById('simRun').classList.remove('hidden');
+  const b=document.getElementById('simBtn'); b.style.opacity='.5'; b.style.pointerEvents='none';
+  runStepper(sSteps,'simStepper','simBar','simPct','#2B5CFF',()=>{ document.getElementById('simRun').classList.add('hidden'); document.getElementById('simResult').classList.remove('hidden'); sBusy=false; b.style.opacity=''; b.style.pointerEvents=''; });
+}
+
+// counters
+function count(el){ const t=+el.dataset.count,d=1100,s=performance.now();
+  function f(n){ const p=Math.min((n-s)/d,1),e=1-Math.pow(1-p,3); let v=Math.round(t*e); el.textContent=t>=1000?v.toLocaleString('ru-RU'):v; if(p<1)requestAnimationFrame(f);} requestAnimationFrame(f); }
+document.querySelectorAll('[data-count]').forEach(count);
+
+document.addEventListener('click',e=>{ if(!e.target.closest('.relative')) document.getElementById('mMenu').classList.add('hidden'); });
+let docs = [
+  {n:'Отчёт_ЛМ-441_2022.pdf', s:'2.1 МБ'},
+  {n:'Патент_RU2731063_C1.pdf', s:'0.8 МБ'},
+  {n:'J_Alloys_Compd_812_2019.pdf', s:'1.4 МБ'},
+];
+function fmtSize(b){ return b>=1048576?(b/1048576).toFixed(1)+' МБ':Math.max(1,Math.round(b/1024))+' КБ'; }
+function renderDocs(){
+  const list=document.getElementById('docList');
+  list.innerHTML = docs.length ? docs.map((d,i)=>`
+    <div class="flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] bg-muted">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A9AA2" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      <span class="flex-1 text-[12.5px] text-body truncate">${d.n}</span>
+      <span class="mono text-[11px] text-faint">${d.s}</span>
+      <button onclick="removeDoc(${i})" class="text-faint hover:text-danger transition"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>`).join('') : `<div class="text-[12px] text-faint px-1 pb-1">Документы не добавлены — загрузите файлы для анализа</div>`;
+  document.getElementById('docN').textContent = docs.length;
+  const dc=document.getElementById('docCount'); if(dc) dc.textContent=docs.length;
+}
+function removeDoc(i){ docs.splice(i,1); renderDocs(); }
+function toggleAdv(){ const a=document.getElementById('advanced'); const open=a.classList.toggle('hidden')===false; document.getElementById('advChev').style.transform=open?'rotate(90deg)':''; }
+function setProfile(){ document.getElementById('profileSub').textContent = 'Профиль: ' + document.getElementById('profileSel').value; }
+document.getElementById('docInput').addEventListener('change',e=>{
+  [...e.target.files].forEach(f=>docs.push({n:f.name, s:fmtSize(f.size)}));
+  e.target.value=''; renderDocs();
+});
+
+const profiles = ['Металлург · жаропрочные сплавы','Инженер-обогатитель · шихта и извлечение','Химик-технолог · пирометаллургия','R&D Data Scientist · предиктивные модели'];
+let pmSel = 0;
+function renderPM(){ document.getElementById('pmList').innerHTML = profiles.map((p,i)=>{ const on=i===pmSel; const parts=p.split(' · ');
+  return `<button onclick="pmSelect(${i})" class="flex items-center gap-3 w-full px-4 py-3 rounded-[12px] border text-left transition ${on?'border-ink bg-muted':'border-bd hover:border-bds'}"><span class="w-[18px] h-[18px] rounded-full grid place-items-center shrink-0" style="border:1.5px solid ${on?'#09090B':'#DCDCE0'}">${on?'<span class=\'w-2.5 h-2.5 rounded-full bg-ink\'></span>':''}</span><span class="text-[13.5px] font-medium text-ink">${parts[0]}</span><span class="ml-auto text-[12px] text-faint">${parts[1]}</span></button>`; }).join(''); }
+function pmSelect(i){ pmSel=i; renderPM(); }
+function openProfile(){ const cur=document.getElementById('profileSub').textContent.replace('Профиль: ',''); const idx=profiles.indexOf(cur); pmSel=idx<0?0:idx; renderPM(); document.getElementById('profileModal').classList.remove('hidden'); }
+function closeProfile(){ document.getElementById('profileModal').classList.add('hidden'); }
+function confirmProfile(){ document.getElementById('profileSub').textContent='Профиль: '+profiles[pmSel]; closeProfile(); generate(); }
+
+renderDocs(); renderSources(); renderSimPick(); renderModels();
+</script>
+</body>
+</html>
