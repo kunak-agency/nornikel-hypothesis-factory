@@ -54,7 +54,10 @@ func buildProblemSpec(ctx context.Context, client externalApi.LLMClient, rawText
 			{Role: "system", Content: problemSpecSystemPrompt},
 			{Role: "user", Content: "<user_data>\n" + escapeUserDataDelimiters(rawText) + "\n</user_data>"},
 		},
-		Temperature: 0.1,
+		// 0, а не 0.1: extraction должен быть детерминированным. При 0.1 модель
+		// на одном и том же тексте иногда возвращала target_kpi пустым, иногда
+		// заполненным — отсюда «плавающее» «Без описания» в списке прогонов.
+		Temperature: 0,
 		MaxTokens:   1500,
 	})
 	if err != nil {
@@ -66,6 +69,27 @@ func buildProblemSpec(ctx context.Context, client externalApi.LLMClient, rawText
 		return domain.ProblemSpec{}, fmt.Errorf("problemspec parse: %w (raw=%s)", err, resp.Text)
 	}
 	return spec, nil
+}
+
+// ensureTargetKPI гарантирует непустой TargetKPI. LLM по инструкции промпта не
+// выдумывает цель и при неявной формулировке оставляет target_kpi пустым — но
+// в UI это выглядит как «Без описания». Если поле пустое, а сигнал есть
+// (металлы/hotspots/фабрика), собираем детерминированную формулировку из уже
+// извлечённых полей — без дополнительного LLM-вызова. Вызывается ПОСЛЕ того,
+// как spec финализирован (в т.ч. после подмешивания металлов/hotspots из Excel).
+func ensureTargetKPI(spec *domain.ProblemSpec) {
+	if strings.TrimSpace(spec.TargetKPI) != "" {
+		return
+	}
+	metals := "металлов"
+	if len(spec.TargetMetals) > 0 {
+		metals = strings.Join(spec.TargetMetals, ", ")
+	}
+	kpi := "снижение потерь " + metals + " в хвостах"
+	if spec.Plant != "" {
+		kpi += " (" + spec.Plant + ")"
+	}
+	spec.TargetKPI = kpi
 }
 
 // escapeUserDataDelimiters нейтрализует "<"/">" в rawText так, чтобы

@@ -72,6 +72,7 @@ func (s *Service) StartRun(ctx context.Context, rawText string, rawInput map[str
 		spec.Plant = opts.Plant
 	}
 	s.enrichAvailableEquipment(ctx, &spec)
+	ensureTargetKPI(&spec)
 
 	run := &domain.HypothesisRun{
 		ProblemSpec:    spec,
@@ -174,6 +175,7 @@ func (s *Service) StartRunFromExcel(ctx context.Context, excelData []byte, rawTe
 		}
 	}
 	s.enrichAvailableEquipment(ctx, &spec)
+	ensureTargetKPI(&spec)
 
 	if rawInput == nil {
 		rawInput = map[string]any{}
