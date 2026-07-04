@@ -33,19 +33,12 @@ func ToDOCX(spec domain.ProblemSpec, hyps []domain.Hypothesis, sources map[uuid.
 
 	doc.AddParagraph().AddText("Фабрика гипотез — отчёт").Bold().Size("36")
 
-	p := doc.AddParagraph()
-	p.AddText("Цель: ").Bold()
-	p.AddText(spec.TargetKPI)
-
+	addLabeledParagraph(doc, "Цель:", spec.TargetKPI)
 	if spec.Plant != "" {
-		p := doc.AddParagraph()
-		p.AddText("Фабрика: ").Bold()
-		p.AddText(spec.Plant)
+		addLabeledParagraph(doc, "Фабрика:", spec.Plant)
 	}
 	if len(spec.TargetMetals) > 0 {
-		p := doc.AddParagraph()
-		p.AddText("Целевые металлы: ").Bold()
-		p.AddText(strings.Join(spec.TargetMetals, ", "))
+		addLabeledParagraph(doc, "Целевые металлы:", strings.Join(spec.TargetMetals, ", "))
 	}
 	if len(spec.LossHotspots) > 0 {
 		doc.AddParagraph().AddText("Точки потерь:").Bold()
@@ -116,6 +109,9 @@ const separatorLine = "───────────────────
 
 func addLabeledParagraph(doc *docx.Docx, label, value string) {
 	p := doc.AddParagraph()
-	p.AddText(label).Bold()
-	p.AddText(value)
+	// Неразрывный пробел (U+00A0) после метки: go-docx не ставит
+	// xml:space="preserve", и обычные пробелы на границах run'ов съедаются
+	// рендерерами ("Механизм:Значение" вместо "Механизм: Значение").
+	p.AddText(strings.TrimRight(label, " ") + " ").Bold()
+	p.AddText(strings.TrimLeft(value, " "))
 }
