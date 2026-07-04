@@ -35,7 +35,12 @@ export const useRunsStore = defineStore('runs', () => {
     try {
       current.value = await runsApi.get(runId)
     } catch (e) {
+      // НЕ оставляем протухший current от прошлого прогона — иначе вызывающий
+      // код примет чужой/удалённый прогон за успешно загруженный. Пробрасываем
+      // ошибку, чтобы 404 (удалённый прогон) обрабатывался явно.
       error.value = (e as Error).message
+      current.value = null
+      throw e
     } finally {
       loading.value = false
     }
@@ -61,6 +66,10 @@ export const useRunsStore = defineStore('runs', () => {
     await runsApi.remove(runId)
     runs.value = runs.value.filter((r) => r.id !== runId)
     total.value = Math.max(0, total.value - 1)
+    // Если удалили открытый сейчас прогон — сбрасываем current, чтобы UI не
+    // держал ссылку на несуществующую запись (иначе повторное открытие/поллинг
+    // упрётся в 404).
+    if (current.value?.id === runId) current.value = null
   }
 
   // Поллинг GET /v1/runs/{id} пока статус не станет терминальным.

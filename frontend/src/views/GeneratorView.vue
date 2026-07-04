@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onBeforeUnmount, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { toast } from 'vue-sonner'
 
@@ -10,6 +11,7 @@ import RunReport from '@/components/RunReport.vue'
 
 const props = defineProps<{ runId?: string }>()
 const store = useRunsStore()
+const router = useRouter()
 
 type Phase = 'empty' | 'progress' | 'report' | 'error'
 const phase = ref<Phase>('empty')
@@ -129,6 +131,15 @@ async function openRun(id: string) {
     activeRun.value = run
     await pollActive(run)
   } catch (e) {
+    // Прогон удалён (или его никогда не было) — не пугаем «ошибкой», а мягко
+    // возвращаем к списку. 404 может прилететь как из fetchRun, так и из
+    // поллинга, если запись удалили прямо во время просмотра.
+    if ((e as { response?: { status?: number } })?.response?.status === 404) {
+      activeRun.value = null
+      toast.error('Прогон не найден', { description: 'Возможно, он был удалён' })
+      router.replace('/')
+      return
+    }
     toast.error('Не удалось открыть прогон', { description: (e as Error).message })
     phase.value = 'error'
   } finally {
